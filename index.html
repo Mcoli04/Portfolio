@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Max Coleiro — UX/UI Designer & Front-End Developer</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0b0c;
+    --surface: #17181b;
+    --border: #2f3238;
+    --text: #f3efe8;
+    --muted: #8b867f;
+    --accent: #d2cdc4;
+    --accent2: #7f8f86;
+    --white: #fffaf5;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.4rem 4rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(14,14,14,0.85);
+    backdrop-filter: blur(12px);
+  }
+  .nav-logo {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+    color: var(--accent);
+    text-decoration: none;
+    letter-spacing: 0.01em;
+  }
+  .nav-links { display: flex; gap: 2.5rem; list-style: none; }
+  .nav-links a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.8rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transition: color 0.25s;
+  }
+  .nav-links a:hover { color: var(--accent); }
+
+  /* ── HERO ── */
+  #hero {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding-top: 5rem;
+  }
+  .hero-left {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 6rem 4rem 6rem 4rem;
+    border-right: 1px solid var(--border);
+  }
+  .hero-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent2);
+    margin-bottom: 1.8rem;
+    opacity: 0;
+    animation: fadeUp 0.7s 0.2s forwards;
+  }
+  .hero-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(3rem, 5vw, 5.5rem);
+    line-height: 1.05;
+    color: var(--white);
+    margin-bottom: 1.4rem;
+    opacity: 0;
+    animation: fadeUp 0.7s 0.35s forwards;
+  }
+  .hero-name em {
+    font-style: italic;
+    color: var(--accent);
+  }
+  .hero-summary {
+    font-size: 1rem;
+    color: var(--muted);
+    max-width: 440px;
+    line-height: 1.8;
+    margin-bottom: 2.8rem;
+    opacity: 0;
+    animation: fadeUp 0.7s 0.5s forwards;
+  }
+  .hero-cta {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    opacity: 0;
+    animation: fadeUp 0.7s 0.65s forwards;
+  }
+  .btn {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-decoration: none;
+    border-radius: 2px;
+    transition: all 0.25s;
+    font-family: 'DM Mono', monospace;
+  }
+  .btn-primary { background: var(--accent); color: #0e0e0e; }
+  .btn-primary:hover { background: var(--white); }
+  .btn-ghost { border: 1px solid var(--border); color: var(--muted); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  .hero-right {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 6rem 4rem;
+    position: relative;
+  }
+  .hero-image-frame {
+    position: absolute;
+    top: 5rem; left: 4rem; right: 4rem;
+    bottom: 12rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .hero-image-frame img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    opacity: 0.85;
+    display: block;
+  }
+  .placeholder-img {
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+  }
+  .placeholder-img svg { opacity: 0.3; }
+
+  .hero-meta {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+  .hero-meta-item {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+  .hero-meta-item span { display: block; color: var(--text); font-size: 0.85rem; margin-top: 0.2rem; font-family: 'DM Sans', sans-serif; }
+
+  /* ── SECTIONS ── */
+  section { padding: 6rem 4rem; border-top: 1px solid var(--border); }
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent2);
+    margin-bottom: 3rem;
+  }
+  .section-label::before {
+    content: '[ ';
+  }
+  .section-label::after {
+    content: ' ]';
+  }
+
+  /* ── ABOUT / SKILLS ── */
+  #about { display: grid; grid-template-columns: 1fr 1fr; gap: 5rem; }
+  .about-intro {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(1.5rem, 2.5vw, 2.2rem);
+    line-height: 1.35;
+    color: var(--white);
+  }
+  .about-intro em { font-style: italic; color: var(--accent); }
+
+  .skills-grid { display: flex; flex-direction: column; gap: 2rem; }
+  .skill-group-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.8rem;
+  }
+  .skill-pills { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .pill {
+    padding: 0.3rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 0.78rem;
+    color: var(--text);
+    background: var(--surface);
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .pill:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── EXPERIENCE ── */
+  #experience {}
+  .exp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+  .exp-card {
+    background: var(--surface);
+    padding: 2.5rem;
+    border: 1px solid var(--border);
+    transition: border-color 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+  .exp-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 2px;
+    height: 0;
+    background: var(--accent);
+    transition: height 0.4s ease;
+  }
+  .exp-card:hover::before { height: 100%; }
+  .exp-card:hover { border-color: #333; }
+  .exp-period {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    margin-bottom: 1rem;
+  }
+  .exp-role {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.3rem;
+    color: var(--white);
+    line-height: 1.2;
+    margin-bottom: 0.3rem;
+  }
+  .exp-company {
+    font-size: 0.82rem;
+    color: var(--accent);
+    margin-bottom: 1.4rem;
+  }
+  .exp-bullets { list-style: none; display: flex; flex-direction: column; gap: 0.7rem; }
+  .exp-bullets li {
+    font-size: 0.88rem;
+    color: var(--muted);
+    padding-left: 1.2rem;
+    position: relative;
+    line-height: 1.6;
+  }
+  .exp-bullets li::before {
+    content: '—';
+    position: absolute;
+    left: 0;
+    color: var(--accent2);
+    font-size: 0.7rem;
+    top: 0.15rem;
+  }
+
+  /* ── PROJECTS ── */
+  #projects {}
+  .projects-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
+  .project-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    position: relative;
+    transition: border-color 0.3s;
+    display: flex;
+    flex-direction: column;
+  }
+  .project-card:hover { border-color: #333; }
+  .project-image {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    display: block;
+    background: #1a1a1a;
+  }
+  .project-image-placeholder {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--border);
+  }
+  .project-image-placeholder svg { opacity: 0.25; }
+  .project-body { padding: 2rem; flex: 1; display: flex; flex-direction: column; }
+  .project-year {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    margin-bottom: 0.7rem;
+  }
+  .project-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.2rem;
+    color: var(--white);
+    line-height: 1.25;
+    margin-bottom: 1rem;
+  }
+  .project-desc {
+    font-size: 0.84rem;
+    color: var(--muted);
+    line-height: 1.7;
+    flex: 1;
+  }
+  .project-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1.4rem; }
+  .tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.6rem;
+    background: rgba(200, 184, 154, 0.08);
+    border: 1px solid rgba(200, 184, 154, 0.15);
+    color: var(--accent);
+    border-radius: 1px;
+  }
+
+  /* ── EDUCATION ── */
+  #education {}
+  .edu-list { display: flex; flex-direction: column; gap: 0; }
+  .edu-item {
+    display: grid;
+    grid-template-columns: 180px 1fr 160px;
+    align-items: center;
+    gap: 2rem;
+    padding: 2rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .edu-period {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.07em;
+  }
+  .edu-degree {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+    color: var(--white);
+    margin-bottom: 0.2rem;
+  }
+  .edu-school { font-size: 0.82rem; color: var(--accent); }
+  .edu-location {
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-align: right;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+  }
+
+  /* ── CONTACT ── */
+  #contact {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5rem;
+    align-items: center;
+  }
+  .contact-headline {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(2rem, 3.5vw, 3.2rem);
+    color: var(--white);
+    line-height: 1.2;
+  }
+  .contact-headline em { font-style: italic; color: var(--accent); }
+  .contact-links { display: flex; flex-direction: column; gap: 1.2rem; }
+  .contact-link {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    text-decoration: none;
+    padding: 1.2rem 1.5rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    transition: border-color 0.25s, background 0.25s;
+    group: true;
+  }
+  .contact-link:hover { border-color: var(--accent); background: rgba(200,184,154,0.04); }
+  .contact-link-icon {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--accent2);
+    letter-spacing: 0.1em;
+    min-width: 60px;
+  }
+  .contact-link-value {
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    padding: 2rem 4rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  footer p {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    nav { padding: 1.2rem 2rem; }
+    .nav-links { gap: 1.5rem; }
+    #hero { grid-template-columns: 1fr; }
+    .hero-right { display: none; }
+    .hero-left { padding: 7rem 2rem 4rem; }
+    section { padding: 4rem 2rem; }
+    #about { grid-template-columns: 1fr; gap: 3rem; }
+    .exp-grid { grid-template-columns: 1fr; }
+    .projects-grid { grid-template-columns: 1fr; }
+    .edu-item { grid-template-columns: 1fr; gap: 0.5rem; }
+    .edu-location { text-align: left; }
+    #contact { grid-template-columns: 1fr; }
+    footer { padding: 1.5rem 2rem; flex-direction: column; gap: 0.5rem; text-align: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="#hero" class="nav-logo">Max Coleiro</a>
+  <ul class="nav-links">
+    <li><a href="#about">About</a></li>
+    <li><a href="#experience">Experience</a></li>
+    <li><a href="#projects">Projects</a></li>
+    <li><a href="#education">Education</a></li>
+    <li><a href="#contact">Contact</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-left">
+    <p class="hero-tag">UX/UI Designer &amp; Front-End Developer</p>
+    <h1 class="hero-name">Max <em>Coleiro</em></h1>
+    <p class="hero-summary">
+      Finishing an MA in User Experience Design at Regent's University London. I work across the full design process — research, wireframing, prototyping in Figma, and writing the front-end code myself.
+    </p>
+    <div class="hero-cta">
+      <a href="#projects" class="btn btn-primary">View Work</a>
+      <a href="#contact" class="btn btn-ghost">Get in Touch</a>
+    </div>
+  </div>
+  <div class="hero-right">
+    <div class="hero-image-frame">
+           <img src="intro.png">
+    </div>
+    <div class="hero-meta">
+      <div class="hero-meta-item">LOCATION <span>London, UK</span></div>
+      <div class="hero-meta-item">STUDY <span>MA UX Design</span></div>
+      <div class="hero-meta-item">LANGUAGES <span>EN / MT</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ABOUT -->
+<section id="about">
+  <div>
+    <p class="section-label">About</p>
+    <h2 class="about-intro">
+      I design with <em>empathy</em> and build with code — bridging research and reality for real users.
+    </h2>
+  </div>
+  <div class="skills-grid reveal">
+    <div>
+      <p class="skill-group-label">Design &amp; Prototyping</p>
+      <div class="skill-pills">
+        <span class="pill">Figma</span>
+        <span class="pill">Adobe XD</span>
+        <span class="pill">Wireframing</span>
+        <span class="pill">Interactive Prototyping</span>
+        <span class="pill">User Research</span>
+        <span class="pill">Usability Testing</span>
+        <span class="pill">WCAG Accessibility</span>
+      </div>
+    </div>
+    <div>
+      <p class="skill-group-label">Front-End Development</p>
+      <div class="skill-pills">
+        <span class="pill">HTML</span>
+        <span class="pill">CSS</span>
+        <span class="pill">JavaScript</span>
+        <span class="pill">Node.js</span>
+        <span class="pill">PHP</span>
+        <span class="pill">WordPress</span>
+      </div>
+    </div>
+    <div>
+      <p class="skill-group-label">Other Programming</p>
+      <div class="skill-pills">
+        <span class="pill">Python</span>
+        <span class="pill">Java</span>
+        <span class="pill">C++</span>
+        <span class="pill">SQL</span>
+        <span class="pill">Power BI</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EXPERIENCE -->
+<section id="experience">
+  <p class="section-label">Experience</p>
+  <div class="exp-grid reveal">
+
+    <div class="exp-card">
+      <p class="exp-period">March 2025 – September 2025  ·  Malta</p>
+      <h3 class="exp-role">Website Specialist &amp; Retail Data</h3>
+      <p class="exp-company">All Seasons Home &amp; Garden</p>
+      <ul class="exp-bullets">
+        <li>Designed and maintained website layout, ensuring responsiveness across screen sizes.</li>
+        <li>Wrote front-end code in HTML, CSS, and JavaScript, translating Figma and Adobe XD designs into working pages.</li>
+        <li>Created wireframes and prototypes for internal review and team communication.</li>
+        <li>Managed the product catalogue — keeping stock listings accurate and consistently structured.</li>
+      </ul>
+    </div>
+
+    <div class="exp-card">
+      <p class="exp-period">November 2023 – March 2025  ·  Malta</p>
+      <h3 class="exp-role">Online Sales Specialist</h3>
+      <p class="exp-company">The Atrium</p>
+      <ul class="exp-bullets">
+        <li>Handled day-to-day online sales and maintained consistent brand presence across platforms.</li>
+        <li>Updated website content and product listings, developing a strong sense of how UX and copy decisions affect user behaviour.</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<!-- PROJECTS -->
+<section id="projects">
+  <p class="section-label">Projects</p>
+  <div class="projects-grid reveal">
+
+    <div class="project-card">
+      <img src="NGO.png" class="project-image" alt="NGO Web App">
+      
+      <div class="project-body">
+        <p class="project-year">2024 · Final Year Project</p>
+        <h3 class="project-title">NGO Web App for Single-Parent Families</h3>
+        <p class="project-desc">Designed and built a web application for a Maltese NGO supporting single-parent families — covering housing, job guidance, and social services access. Ran user research and usability testing throughout, with a strong focus on accessibility and approachability for a vulnerable user group.</p>
+        <div class="project-tags">
+          <span class="tag">UX Research</span>
+          <span class="tag">Figma</span>
+          <span class="tag">Accessibility</span>
+          <span class="tag">Front-End</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="project-card">
+      <img src="mother.png" class="project-image" alt="Motherly Love">
+    
+      <div class="project-body">
+        <p class="project-year">Dec 2025 · Regent's University London</p>
+        <h3 class="project-title">Motherly Love — Community Platform</h3>
+        <p class="project-desc">Requirements analysis and user personas for a platform helping mothers find local events and connect with other mums. Built wireframes and interactive Figma prototypes, presented to a panel, and wrote a critical reflection on the prototyping process.</p>
+        <div class="project-tags">
+          <span class="tag">User Personas</span>
+          <span class="tag">Wireframing</span>
+          <span class="tag">Figma</span>
+          <span class="tag">Research</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="project-card">
+      <img src="allseasons.png" class="project-image" alt="All Seasons Garden Centre"> 
+      
+      <div class="project-body">
+        <p class="project-year">2025 · Commercial Project</p>
+        <h3 class="project-title">All Seasons Garden Centre Website</h3>
+        <p class="project-desc">End-to-end commercial project from concept to launch — handling both the UX design and front-end build. Built interactive Figma prototypes and worked closely with the client to align design with business needs. Focused on intuitive navigation and easy product browsing.</p>
+        <div class="project-tags">
+          <span class="tag">End-to-End</span>
+          <span class="tag">Figma</span>
+          <span class="tag">HTML/CSS/JS</span>
+          <span class="tag">Client Work</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- EDUCATION -->
+<section id="education">
+  <p class="section-label">Education</p>
+  <div class="edu-list reveal">
+
+    <div class="edu-item">
+      <p class="edu-period">Sep 2025 – Sep 2026</p>
+      <div>
+        <p class="edu-degree">MA User Experience Design</p>
+        <p class="edu-school">Regent's University London</p>
+      </div>
+      <p class="edu-location">London, UK</p>
+    </div>
+
+    <div class="edu-item">
+      <p class="edu-period">Oct 2021 – Sep 2024</p>
+      <div>
+        <p class="edu-degree">BSc (Hons) Computing with UX and UI</p>
+        <p class="edu-school">Goldsmiths, University of London</p>
+      </div>
+      <p class="edu-location">London, UK</p>
+    </div>
+
+    <div class="edu-item">
+      <p class="edu-period">Sep 2020 – Sep 2021</p>
+      <div>
+        <p class="edu-degree">Diploma in Computing with Information Systems</p>
+        <p class="edu-school">Saint Martin's Institute of Higher Education</p>
+      </div>
+      <p class="edu-location">Malta</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section id="contact">
+  <div>
+    <p class="section-label">Contact</p>
+    <h2 class="contact-headline">
+      Let's make something <em>worth using</em>.
+    </h2>
+  </div>
+  <div class="contact-links reveal">
+    <a href="mailto:Coleiro.max04@gmail.com" class="contact-link">
+      <span class="contact-link-icon">EMAIL</span>
+      <span class="contact-link-value">Coleiro.max04@gmail.com</span>
+    </a>
+    <a href="tel:+35679045797" class="contact-link">
+      <span class="contact-link-icon">PHONE</span>
+      <span class="contact-link-value">+356 7904 5797</span>
+    </a>
+    <a href="https://linkedin.com/in/max-coleiro-3655a923b" target="_blank" class="contact-link">
+      <span class="contact-link-icon">LINKEDIN</span>
+      <span class="contact-link-value">linkedin.com/in/max-coleiro-3655a923b</span>
+    </a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p>© 2025 Max Coleiro</p>
+  <p>UX/UI Designer &amp; Front-End Developer · London, UK</p>
+</footer>
+
+<script>
+  // Scroll reveal
+  const reveals = document.querySelectorAll('.reveal');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((e, i) => {
+      if (e.isIntersecting) {
+        setTimeout(() => e.target.classList.add('visible'), i * 80);
+      }
+    });
+  }, { threshold: 0.1 });
+  reveals.forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>
