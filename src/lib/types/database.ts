@@ -1,0 +1,280 @@
+// Hand-written types mirroring supabase/migrations/0001_init.sql.
+// Kept in sync manually; if the schema changes, update this file alongside
+// the migration. (A generated-types workflow can replace this once a real
+// Supabase project is linked — see README.)
+
+export type IntegrationStatus = "LIVE" | "DEMO" | "NOT_CONFIGURED" | "DISABLED";
+
+export type OnboardingStep =
+  | "create_account"
+  | "upload_cv"
+  | "parse_cv"
+  | "review_cv"
+  | "preferences"
+  | "auto_apply_mode"
+  | "consent"
+  | "complete";
+
+export type AutoApplyMode = "auto" | "hybrid" | "review";
+
+export type WorkType = "remote" | "hybrid" | "onsite";
+export type EmploymentType = "full_time" | "part_time" | "contract" | "temporary" | "internship";
+export type ExperienceLevel = "internship" | "entry" | "junior" | "mid" | "senior" | "lead" | "executive";
+
+export type ApplicationMethod = "api" | "ats" | "browser_automation" | "email" | "internal" | "manual";
+
+export type ApplicationStatus =
+  | "interested"
+  | "queued"
+  | "applying"
+  | "submitted"
+  | "failed"
+  | "manual_required"
+  | "interview"
+  | "offer"
+  | "rejected"
+  | "withdrawn";
+
+export type JobInteractionAction = "viewed" | "saved" | "rejected" | "dismissed" | "undone";
+
+export type JobStatus = "NEW" | "ACTIVE" | "UPDATED" | "EXPIRED" | "CLOSED" | "ARCHIVED";
+
+export interface EducationEntry {
+  institution: string;
+  degree: string;
+  field?: string;
+  startYear?: number;
+  endYear?: number;
+}
+
+export interface CertificationEntry {
+  name: string;
+  issuer?: string;
+  year?: number;
+}
+
+export interface ParsedCvData {
+  fullName?: string;
+  email?: string;
+  phone?: string;
+  location?: string;
+  skills: string[];
+  jobTitles: string[];
+  employers: string[];
+  yearsExperience?: number;
+  education: EducationEntry[];
+  certifications: CertificationEntry[];
+  languages: string[];
+  industries: string[];
+  /** true when parsing used AI; false means the deterministic heuristic fallback ran */
+  aiAssisted: boolean;
+  warnings: string[];
+}
+
+export interface Profile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  phone: string | null;
+  location: string | null;
+  headline: string | null;
+  years_experience: number | null;
+  skills: string[];
+  job_titles: string[];
+  employers: string[];
+  education: EducationEntry[];
+  certifications: CertificationEntry[];
+  languages: string[];
+  industries: string[];
+  default_resume_id: string | null;
+  role: "user" | "employer" | "admin";
+  onboarding_step: OnboardingStep;
+  onboarding_completed: boolean;
+  auto_apply_mode: AutoApplyMode;
+  auto_apply_authorized: boolean;
+  auto_apply_authorized_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Resume {
+  id: string;
+  user_id: string;
+  label: string;
+  is_default: boolean;
+  latest_version_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResumeVersion {
+  id: string;
+  resume_id: string;
+  user_id: string;
+  version_number: number;
+  file_path: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  parse_status: "pending" | "parsed" | "failed";
+  parsed_data: ParsedCvData | null;
+  parse_error: string | null;
+  created_at: string;
+}
+
+export interface JobPreferences {
+  id: string;
+  user_id: string;
+  job_titles: string[];
+  custom_titles: string[];
+  locations: string[];
+  work_types: string[];
+  employment_types: EmploymentType[];
+  experience_levels: ExperienceLevel[];
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string;
+  industries: string[];
+  keywords_include: string[];
+  keywords_exclude: string[];
+  visa_sponsorship_required: boolean;
+  languages: string[];
+  recently_posted_only: boolean;
+  salary_disclosed_only: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  slug: string | null;
+  logo_url: string | null;
+  website: string | null;
+  industry: string | null;
+  description: string | null;
+  location: string | null;
+  verified: boolean;
+  application_methods: unknown[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobSourceRow {
+  id: string;
+  key: string;
+  name: string;
+  kind: "government" | "eu_network" | "employer_feed" | "licensed_api" | "ats" | "email" | "internal";
+  status: IntegrationStatus;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  last_synced_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Job {
+  id: string;
+  source_id: string | null;
+  source: string;
+  source_job_id: string;
+  title: string;
+  company_id: string | null;
+  company_name: string;
+  company_logo: string | null;
+  description: string;
+  responsibilities: string | null;
+  requirements: string | null;
+  skills: string[];
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  location: string | null;
+  locality: string | null;
+  country: string;
+  remote_type: WorkType | null;
+  employment_type: EmploymentType | null;
+  experience_level: ExperienceLevel | null;
+  industry: string | null;
+  posted_at: string;
+  expires_at: string | null;
+  application_url: string | null;
+  application_email: string | null;
+  application_method: ApplicationMethod;
+  application_provider: string | null;
+  auto_apply_supported: boolean;
+  dedupe_hash: string | null;
+  canonical_job_id: string | null;
+  status: JobStatus;
+  active: boolean;
+  raw: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobWithMatch extends Job {
+  match_score: number;
+  match_reasons: string[];
+}
+
+export interface JobInteraction {
+  id: string;
+  user_id: string;
+  job_id: string;
+  action: JobInteractionAction;
+  match_score: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Application {
+  id: string;
+  user_id: string;
+  job_id: string;
+  company_id: string | null;
+  resume_id: string | null;
+  submitted_resume_id: string | null;
+  cover_letter_id: string | null;
+  match_score: number | null;
+  application_method: ApplicationMethod;
+  application_provider: string | null;
+  status: ApplicationStatus;
+  manual_required: boolean;
+  external_application_id: string | null;
+  submitted_at: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApplicationEvent {
+  id: string;
+  application_id: string;
+  event_type: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AnswerLibraryEntry {
+  id: string;
+  user_id: string;
+  question_key: string;
+  question_text: string;
+  answer_text: string;
+  answer_type: "text" | "boolean" | "number" | "select";
+  verified: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  body: string;
+  read: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
