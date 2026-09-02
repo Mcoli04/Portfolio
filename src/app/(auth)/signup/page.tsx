@@ -6,9 +6,11 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { signupSchema, type SignupInput } from "@/lib/validation/auth";
+import { Check } from "lucide-react";
+import { signupSchema, PASSWORD_REQUIREMENTS, type SignupInput } from "@/lib/validation/auth";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -16,8 +18,10 @@ export default function SignupPage() {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<SignupInput>({ resolver: zodResolver(signupSchema) });
+  const passwordValue = watch("password") ?? "";
 
   async function onSubmit(values: SignupInput) {
     try {
@@ -81,9 +85,27 @@ export default function SignupPage() {
             autoComplete="new-password"
             {...register("password")}
             className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
-            placeholder="At least 8 characters"
+            placeholder="Create a password"
           />
-          {errors.password && <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>}
+          <ul className="mt-2 space-y-1">
+            {PASSWORD_REQUIREMENTS.map((requirement) => {
+              const met = requirement.test(passwordValue);
+              return (
+                <li key={requirement.id} className="flex items-center gap-1.5 text-xs">
+                  <span
+                    className={cn(
+                      "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border",
+                      met ? "border-emerald-500 bg-emerald-500" : "border-slate-300"
+                    )}
+                  >
+                    {met && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+                  </span>
+                  <span className={met ? "text-emerald-700" : "text-slate-500"}>{requirement.label}</span>
+                </li>
+              );
+            })}
+          </ul>
+          {errors.password && <p className="mt-1.5 text-xs text-red-600">{errors.password.message}</p>}
         </div>
 
         <div>
