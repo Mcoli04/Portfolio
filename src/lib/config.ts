@@ -11,14 +11,14 @@ function present(value: string | undefined): boolean {
 
 export const env = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  supabasePublishableKey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   openaiApiKey: process.env.OPENAI_API_KEY,
   resendApiKey: process.env.RESEND_API_KEY,
   cronSecret: process.env.CRON_SECRET,
 };
 
-export const isSupabaseConfigured = present(env.supabaseUrl) && present(env.supabaseAnonKey);
+export const isSupabaseConfigured = present(env.supabaseUrl) && present(env.supabasePublishableKey);
 export const isServiceRoleConfigured = present(env.supabaseServiceRoleKey);
 export const isOpenAIConfigured = present(env.openaiApiKey);
 export const isResendConfigured = present(env.resendApiKey);

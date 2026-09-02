@@ -15,7 +15,7 @@ Next.js 14 (App Router) · TypeScript · Tailwind CSS · Supabase (Postgres, Aut
 3. `npm install`
 4. `npm run dev`
 
-Without `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`, the app cannot authenticate or read/write any data — Supabase is required infrastructure, not an optional integration.
+Without `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, the app cannot authenticate or read/write any data — Supabase is required infrastructure, not an optional integration.
 
 ### Optional integrations
 
