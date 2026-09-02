@@ -37,11 +37,36 @@ function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
+/**
+ * "All Malta" is stored as the literal locations value "any" — the same
+ * sentinel the matching engine already treats as "no locality restriction"
+ * (see computeMatchScore). It is never added to MALTA_LOCALITIES, so it can
+ * never be confused with a real Maltese locality in the database.
+ */
+const ALL_MALTA = "any";
+
+function selectAllMalta(): string[] {
+  return [ALL_MALTA];
+}
+
+function toggleLocality(current: string[], locality: string): string[] {
+  const withoutAllMalta = current.filter((l) => l !== ALL_MALTA);
+  if (withoutAllMalta.includes(locality)) {
+    const next = withoutAllMalta.filter((l) => l !== locality);
+    // Never leave the field with nothing selected — falling back to zero
+    // individually-picked localities means "match everywhere", so reflect
+    // that as All Malta rather than an ambiguous empty state.
+    return next.length ? next : selectAllMalta();
+  }
+  return [...withoutAllMalta, locality];
+}
+
 export default function PreferencesStep() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [jobTitles, setJobTitles] = useState("");
-  const [locations, setLocations] = useState<string[]>([]);
+  // New users start matched against every locality in Malta.
+  const [locations, setLocations] = useState<string[]>(selectAllMalta());
   const [workTypes, setWorkTypes] = useState<(WorkType | "any")[]>(["any"]);
   const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
   const [experienceLevels, setExperienceLevels] = useState<ExperienceLevel[]>([]);
@@ -83,7 +108,7 @@ export default function PreferencesStep() {
           user_id: user.id,
           job_titles: jobTitles.split(",").map((v) => v.trim()).filter(Boolean),
           custom_titles: [],
-          locations: locations.length ? locations : ["any"],
+          locations,
           work_types: workTypes.includes("any") ? ["any"] : workTypes,
           employment_types: employmentTypes,
           experience_levels: experienceLevels,
@@ -130,6 +155,15 @@ export default function PreferencesStep() {
 
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-700">Locations</label>
+          <label className="mb-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700">
+            <input
+              type="checkbox"
+              checked={locations.includes(ALL_MALTA)}
+              onChange={() => setLocations(selectAllMalta())}
+              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            All Malta
+          </label>
           <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 p-3">
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {MALTA_LOCALITIES.map((locality) => (
@@ -137,7 +171,7 @@ export default function PreferencesStep() {
                   <input
                     type="checkbox"
                     checked={locations.includes(locality)}
-                    onChange={() => setLocations((prev) => toggle(prev, locality))}
+                    onChange={() => setLocations((prev) => toggleLocality(prev, locality))}
                     className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                   />
                   {locality}
@@ -145,7 +179,11 @@ export default function PreferencesStep() {
               ))}
             </div>
           </div>
-          <p className="mt-1 text-xs text-slate-400">Leave empty to match any locality in Malta.</p>
+          <p className="mt-1 text-xs text-slate-400">
+            All Malta matches jobs in every locality. Pick one or more specific localities to narrow your search —
+            doing so automatically switches off All Malta, and you can select as many localities as you like.
+            Re-selecting All Malta clears any specific localities you&apos;ve chosen.
+          </p>
         </div>
 
         <div>
