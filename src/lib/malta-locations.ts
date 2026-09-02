@@ -114,3 +114,40 @@ export function normalizeLocality(input: string): MaltaLocality | null {
   );
   return match ?? null;
 }
+
+/**
+ * Shared "All Malta" location-selection behavior for job_preferences.locations,
+ * used by both the onboarding Preferences step and the standalone Preferences
+ * settings page so the two forms can never drift apart.
+ *
+ * "All Malta" is stored as the sentinel value "any" — the same value
+ * computeMatchScore (src/lib/ai/matching.ts) already treats as "no locality
+ * restriction". It is deliberately kept out of MALTA_LOCALITIES so it can
+ * never be confused with, or persisted as, a real Maltese locality.
+ */
+export const ALL_MALTA_LOCATIONS_VALUE = "any";
+
+/** The locations value representing "match every locality in Malta". */
+export function selectAllMaltaLocations(): string[] {
+  return [ALL_MALTA_LOCATIONS_VALUE];
+}
+
+/** True when a saved/selected locations value is unrestricted (All Malta), including legacy empty arrays. */
+export function isAllMaltaLocations(locations: string[] | null | undefined): boolean {
+  return !locations || locations.length === 0 || locations.includes(ALL_MALTA_LOCATIONS_VALUE);
+}
+
+/**
+ * Toggles a single locality in/out of a locations selection. Selecting any
+ * individual locality clears "All Malta" first; deselecting the last
+ * remaining individual locality falls back to "All Malta" rather than
+ * leaving an ambiguous empty selection.
+ */
+export function toggleMaltaLocality(current: string[], locality: string): string[] {
+  const withoutAllMalta = current.filter((l) => l !== ALL_MALTA_LOCATIONS_VALUE);
+  if (withoutAllMalta.includes(locality)) {
+    const next = withoutAllMalta.filter((l) => l !== locality);
+    return next.length ? next : selectAllMaltaLocations();
+  }
+  return [...withoutAllMalta, locality];
+}

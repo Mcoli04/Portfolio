@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { MALTA_LOCALITIES } from "@/lib/malta-locations";
+import {
+  ALL_MALTA_LOCATIONS_VALUE,
+  MALTA_LOCALITIES,
+  selectAllMaltaLocations,
+  toggleMaltaLocality,
+} from "@/lib/malta-locations";
 import type { EmploymentType, ExperienceLevel, WorkType } from "@/lib/types/database";
 
 const WORK_TYPES: { value: WorkType | "any"; label: string }[] = [
@@ -37,36 +42,12 @@ function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
-/**
- * "All Malta" is stored as the literal locations value "any" — the same
- * sentinel the matching engine already treats as "no locality restriction"
- * (see computeMatchScore). It is never added to MALTA_LOCALITIES, so it can
- * never be confused with a real Maltese locality in the database.
- */
-const ALL_MALTA = "any";
-
-function selectAllMalta(): string[] {
-  return [ALL_MALTA];
-}
-
-function toggleLocality(current: string[], locality: string): string[] {
-  const withoutAllMalta = current.filter((l) => l !== ALL_MALTA);
-  if (withoutAllMalta.includes(locality)) {
-    const next = withoutAllMalta.filter((l) => l !== locality);
-    // Never leave the field with nothing selected — falling back to zero
-    // individually-picked localities means "match everywhere", so reflect
-    // that as All Malta rather than an ambiguous empty state.
-    return next.length ? next : selectAllMalta();
-  }
-  return [...withoutAllMalta, locality];
-}
-
 export default function PreferencesStep() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [jobTitles, setJobTitles] = useState("");
   // New users start matched against every locality in Malta.
-  const [locations, setLocations] = useState<string[]>(selectAllMalta());
+  const [locations, setLocations] = useState<string[]>(selectAllMaltaLocations());
   const [workTypes, setWorkTypes] = useState<(WorkType | "any")[]>(["any"]);
   const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
   const [experienceLevels, setExperienceLevels] = useState<ExperienceLevel[]>([]);
@@ -158,8 +139,8 @@ export default function PreferencesStep() {
           <label className="mb-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700">
             <input
               type="checkbox"
-              checked={locations.includes(ALL_MALTA)}
-              onChange={() => setLocations(selectAllMalta())}
+              checked={locations.includes(ALL_MALTA_LOCATIONS_VALUE)}
+              onChange={() => setLocations(selectAllMaltaLocations())}
               className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
             />
             All Malta
@@ -171,7 +152,7 @@ export default function PreferencesStep() {
                   <input
                     type="checkbox"
                     checked={locations.includes(locality)}
-                    onChange={() => setLocations((prev) => toggleLocality(prev, locality))}
+                    onChange={() => setLocations((prev) => toggleMaltaLocality(prev, locality))}
                     className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                   />
                   {locality}

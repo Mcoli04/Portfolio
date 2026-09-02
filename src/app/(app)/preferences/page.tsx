@@ -5,7 +5,13 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { MALTA_LOCALITIES } from "@/lib/malta-locations";
+import {
+  ALL_MALTA_LOCATIONS_VALUE,
+  MALTA_LOCALITIES,
+  isAllMaltaLocations,
+  selectAllMaltaLocations,
+  toggleMaltaLocality,
+} from "@/lib/malta-locations";
 import type { EmploymentType, ExperienceLevel, WorkType } from "@/lib/types/database";
 
 const WORK_TYPES: { value: WorkType | "any"; label: string }[] = [
@@ -41,7 +47,8 @@ export default function PreferencesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [jobTitles, setJobTitles] = useState("");
-  const [locations, setLocations] = useState<string[]>([]);
+  // Defaults to All Malta until a saved preference (if any) loads.
+  const [locations, setLocations] = useState<string[]>(selectAllMaltaLocations());
   const [workTypes, setWorkTypes] = useState<(WorkType | "any")[]>(["any"]);
   const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
   const [experienceLevels, setExperienceLevels] = useState<ExperienceLevel[]>([]);
@@ -66,7 +73,9 @@ export default function PreferencesPage() {
       const { data: prefs } = await supabase.from("job_preferences").select("*").eq("user_id", user.id).maybeSingle();
       if (prefs) {
         setJobTitles(prefs.job_titles?.join(", ") ?? "");
-        setLocations(prefs.locations ?? []);
+        // A saved unrestricted preference (explicit "any", or legacy empty
+        // array) is shown as All Malta rather than an empty selection.
+        setLocations(isAllMaltaLocations(prefs.locations) ? selectAllMaltaLocations() : prefs.locations);
         setWorkTypes(prefs.work_types ?? ["any"]);
         setEmploymentTypes(prefs.employment_types ?? []);
         setExperienceLevels(prefs.experience_levels ?? []);
@@ -100,7 +109,7 @@ export default function PreferencesPage() {
           user_id: user.id,
           job_titles: jobTitles.split(",").map((v) => v.trim()).filter(Boolean),
           custom_titles: [],
-          locations: locations.length ? locations : ["any"],
+          locations,
           work_types: workTypes.includes("any") ? ["any"] : workTypes,
           employment_types: employmentTypes,
           experience_levels: experienceLevels,
@@ -151,6 +160,15 @@ export default function PreferencesPage() {
 
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-700">Locations</label>
+          <label className="mb-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700">
+            <input
+              type="checkbox"
+              checked={locations.includes(ALL_MALTA_LOCATIONS_VALUE)}
+              onChange={() => setLocations(selectAllMaltaLocations())}
+              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            All Malta
+          </label>
           <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 p-3">
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {MALTA_LOCALITIES.map((locality) => (
@@ -158,7 +176,7 @@ export default function PreferencesPage() {
                   <input
                     type="checkbox"
                     checked={locations.includes(locality)}
-                    onChange={() => setLocations((prev) => toggle(prev, locality))}
+                    onChange={() => setLocations((prev) => toggleMaltaLocality(prev, locality))}
                     className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                   />
                   {locality}
@@ -166,6 +184,11 @@ export default function PreferencesPage() {
               ))}
             </div>
           </div>
+          <p className="mt-1 text-xs text-slate-400">
+            All Malta matches jobs in every locality. Pick one or more specific localities to narrow your search —
+            doing so automatically switches off All Malta, and you can select as many localities as you like.
+            Re-selecting All Malta clears any specific localities you&apos;ve chosen.
+          </p>
         </div>
 
         <div>
