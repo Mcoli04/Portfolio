@@ -6,9 +6,9 @@ import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
-  ALL_MALTA_LOCATIONS_VALUE,
   MALTA_LOCALITIES,
   isAllMaltaLocations,
+  isMaltaLocalitySelected,
   selectAllMaltaLocations,
   toggleMaltaLocality,
 } from "@/lib/malta-locations";
@@ -163,7 +163,7 @@ export default function PreferencesPage() {
           <label className="mb-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700">
             <input
               type="checkbox"
-              checked={locations.includes(ALL_MALTA_LOCATIONS_VALUE)}
+              checked={isAllMaltaLocations(locations)}
               onChange={() => setLocations(selectAllMaltaLocations())}
               className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
             />
@@ -175,7 +175,7 @@ export default function PreferencesPage() {
                 <label key={locality} className="flex items-center gap-1.5 text-xs text-slate-700">
                   <input
                     type="checkbox"
-                    checked={locations.includes(locality)}
+                    checked={isMaltaLocalitySelected(locations, locality)}
                     onChange={() => setLocations((prev) => toggleMaltaLocality(prev, locality))}
                     className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                   />
@@ -185,9 +185,10 @@ export default function PreferencesPage() {
             </div>
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            All Malta matches jobs in every locality. Pick one or more specific localities to narrow your search —
-            doing so automatically switches off All Malta, and you can select as many localities as you like.
-            Re-selecting All Malta clears any specific localities you&apos;ve chosen.
+            All Malta matches jobs in every locality — while it&apos;s active, every locality below shows as
+            selected, but only the All Malta preference is saved. Pick any individual locality to switch off All
+            Malta and match just that locality; you can then select as many specific localities as you like.
+            Re-selecting All Malta clears them and matches everywhere again.
           </p>
         </div>
 

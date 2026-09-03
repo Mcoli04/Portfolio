@@ -151,3 +151,15 @@ export function toggleMaltaLocality(current: string[], locality: string): string
   }
   return [...withoutAllMalta, locality];
 }
+
+/**
+ * Whether a single locality checkbox should render as checked. When "All
+ * Malta" is active every locality is implicitly included, so each checkbox
+ * displays as checked even though the saved value stays the "any" sentinel
+ * — the full locality list is never written out. Clicking any locality
+ * while All Malta is active still goes through toggleMaltaLocality, which
+ * drops "any" and keeps only that one locality, exiting All Malta mode.
+ */
+export function isMaltaLocalitySelected(locations: string[], locality: string): boolean {
+  return isAllMaltaLocations(locations) || locations.includes(locality);
+}
