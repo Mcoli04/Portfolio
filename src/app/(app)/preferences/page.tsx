@@ -13,6 +13,7 @@ import {
   toggleAllMaltaLocations,
   toggleMaltaLocality,
 } from "@/lib/malta-locations";
+import { parseSalaryField, validateSalaryRange } from "@/lib/validation/preferences";
 import type { EmploymentType, ExperienceLevel, WorkType } from "@/lib/types/database";
 
 const WORK_TYPES: { value: WorkType | "any"; label: string }[] = [
@@ -63,6 +64,7 @@ export default function PreferencesPage() {
   const [languages, setLanguages] = useState("");
   const [recentlyPosted, setRecentlyPosted] = useState(false);
   const [salaryDisclosed, setSalaryDisclosed] = useState(false);
+  const salaryError = validateSalaryRange(salaryMin, salaryMax);
 
   useEffect(() => {
     async function load() {
@@ -81,8 +83,8 @@ export default function PreferencesPage() {
         setWorkTypes(prefs.work_types ?? ["any"]);
         setEmploymentTypes(prefs.employment_types ?? []);
         setExperienceLevels(prefs.experience_levels ?? []);
-        setSalaryMin(prefs.salary_min ? String(prefs.salary_min) : "");
-        setSalaryMax(prefs.salary_max ? String(prefs.salary_max) : "");
+        setSalaryMin(prefs.salary_min != null ? String(prefs.salary_min) : "");
+        setSalaryMax(prefs.salary_max != null ? String(prefs.salary_max) : "");
         setCurrency(prefs.salary_currency ?? "EUR");
         setIndustries(prefs.industries?.join(", ") ?? "");
         setKeywordsInclude(prefs.keywords_include?.join(", ") ?? "");
@@ -98,6 +100,10 @@ export default function PreferencesPage() {
   }, []);
 
   async function handleSave() {
+    if (salaryError) {
+      toast.error(salaryError);
+      return;
+    }
     setSaving(true);
     try {
       const supabase = createClient();
@@ -115,8 +121,8 @@ export default function PreferencesPage() {
           work_types: workTypes.includes("any") ? ["any"] : workTypes,
           employment_types: employmentTypes,
           experience_levels: experienceLevels,
-          salary_min: salaryMin ? Number(salaryMin) : null,
-          salary_max: salaryMax ? Number(salaryMax) : null,
+          salary_min: parseSalaryField(salaryMin),
+          salary_max: parseSalaryField(salaryMax),
           salary_currency: currency,
           industries: industries.split(",").map((v) => v.trim()).filter(Boolean),
           keywords_include: keywordsInclude.split(",").map((v) => v.trim()).filter(Boolean),
@@ -228,19 +234,34 @@ export default function PreferencesPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Min salary</label>
-            <input type="number" value={salaryMin} onChange={(e) => setSalaryMin(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
+        <div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Min salary</label>
+              <input
+                type="number"
+                min={0}
+                value={salaryMin}
+                onChange={(e) => setSalaryMin(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Max salary</label>
+              <input
+                type="number"
+                min={0}
+                value={salaryMax}
+                onChange={(e) => setSalaryMax(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Currency</label>
+              <input value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
+            </div>
           </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Max salary</label>
-            <input type="number" value={salaryMax} onChange={(e) => setSalaryMax(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Currency</label>
-            <input value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
-          </div>
+          {salaryError && <p className="mt-1.5 text-xs text-red-600">{salaryError}</p>}
         </div>
 
         <div>
@@ -270,7 +291,7 @@ export default function PreferencesPage() {
           <ToggleRow label="Salary disclosed only" checked={salaryDisclosed} onChange={setSalaryDisclosed} />
         </div>
 
-        <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
+        <Button onClick={handleSave} disabled={saving || !!salaryError} className="w-full sm:w-auto">
           {saving ? "Saving..." : "Save preferences"}
         </Button>
       </div>
