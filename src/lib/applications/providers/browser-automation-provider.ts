@@ -1,4 +1,5 @@
 import type { Job } from "@/lib/types/database";
+import { integrationConfig } from "@/lib/config";
 import { BaseApplicationProvider } from "./base";
 import type { CandidateApplicationData, SubmissionResult } from "../types";
 
@@ -33,11 +34,34 @@ export class BrowserAutomationApplicationProvider extends BaseApplicationProvide
   readonly name = "Permitted browser automation";
 
   protected isConfigured(): boolean {
-    // Playwright itself ships with the app; automation is "configured" as
-    // soon as a job supplies a real application_url to open. Whether a
-    // given site's form can actually be completed is decided at run time —
-    // see the manualRequired outcomes in submitLive.
-    return true;
+    // Coarse status for the admin dashboard: whether ANY employer/domain
+    // has been explicitly reviewed and allowlisted at all. Whether THIS
+    // job's specific domain is allowed is decided per-job by
+    // isDomainAllowed(), called from selectProvider() in engine.ts BEFORE
+    // this provider is ever selected — so a job whose domain hasn't been
+    // reviewed never reaches submitLive() (and therefore never needs a
+    // real Chromium install) in the first place.
+    return integrationConfig.browserAutomationAllowedDomains.length > 0;
+  }
+
+  /**
+   * Whether `applicationUrl`'s hostname has been explicitly reviewed and
+   * allowlisted for automated form-filling (requirement: browser
+   * automation only runs for an employer/domain someone has actually
+   * vetted, never automatically for every job that happens to have a URL).
+   * `allowedDomains` defaults to the real configured list and is only ever
+   * overridden in tests, so callers never need to pass it.
+   */
+  static isDomainAllowed(
+    applicationUrl: string,
+    allowedDomains: string[] = integrationConfig.browserAutomationAllowedDomains
+  ): boolean {
+    try {
+      const hostname = new URL(applicationUrl).hostname.toLowerCase();
+      return allowedDomains.some((allowed) => hostname === allowed || hostname.endsWith(`.${allowed}`));
+    } catch {
+      return false;
+    }
   }
 
   protected async submitLive(job: Job, candidate: CandidateApplicationData): Promise<SubmissionResult> {
@@ -46,7 +70,25 @@ export class BrowserAutomationApplicationProvider extends BaseApplicationProvide
     }
 
     const { chromium } = await import("playwright");
-    const browser = await chromium.launch({ headless: true });
+    let browser: Awaited<ReturnType<typeof chromium.launch>>;
+    try {
+      browser = await chromium.launch({ headless: true });
+    } catch (error) {
+      // A missing/unavailable browser executable is an infrastructure gap,
+      // not a per-job failure — this job still has a perfectly valid
+      // manual fallback (its real application_url), so this must resolve
+      // to manual_required, never a generic "failed". Anything that goes
+      // wrong AFTER a real browser launches (below) is a genuine
+      // unexpected processing error and correctly stays "failed" via the
+      // catch-all in BaseApplicationProvider.submitApplication.
+      console.error("[browser-automation] chromium launch failed", error instanceof Error ? error.message : error);
+      return {
+        success: false,
+        manualRequired: true,
+        errorMessage: "Automated browser submission isn't available in this environment right now — apply directly using the link above.",
+      };
+    }
+
     try {
       const page = await browser.newPage();
       await page.goto(job.application_url, { waitUntil: "domcontentloaded", timeout: 30000 });

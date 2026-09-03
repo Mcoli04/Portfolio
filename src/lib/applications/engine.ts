@@ -3,6 +3,7 @@ import type { Application, Job, Profile, ResumeVersion } from "@/lib/types/datab
 import { tailorCvForJob } from "@/lib/ai/cv-tailoring";
 import { generateCoverLetter } from "@/lib/ai/cover-letter";
 import { getApplicationProvider } from "./provider-registry";
+import { BrowserAutomationApplicationProvider } from "./providers/browser-automation-provider";
 import type { ApplicationProvider, CandidateApplicationData } from "./types";
 
 export type EngineOutcome =
@@ -33,6 +34,17 @@ async function logEvent(
  * configured ATS → permitted browser automation → authorised email →
  * manual. A provider that isn't actually LIVE is skipped rather than used,
  * so the engine never fabricates a submission through a fake channel.
+ *
+ * Browser automation is additionally gated on
+ * BrowserAutomationApplicationProvider.isDomainAllowed(): a job having an
+ * application_url is not by itself enough to attempt automation — that
+ * would mean every real job with no verified submission provider (e.g. a
+ * freshly-ingested Greenhouse job) launches a real browser on a swipe. Only
+ * an employer/domain someone has explicitly reviewed and allowlisted
+ * (BROWSER_AUTOMATION_ALLOWED_DOMAINS) reaches submitLive(); everything
+ * else with no other channel returns null here and resolves to
+ * manual_required with that job's real application_url, without ever
+ * touching Playwright.
  */
 export function selectProvider(job: Job): ApplicationProvider | null {
   if (job.source === "demo") {
@@ -54,7 +66,7 @@ export function selectProvider(job: Job): ApplicationProvider | null {
     if (provider && provider.getStatus() === "LIVE") return provider;
   }
 
-  if (job.application_url) {
+  if (job.application_url && BrowserAutomationApplicationProvider.isDomainAllowed(job.application_url)) {
     return getApplicationProvider("browser_automation");
   }
 

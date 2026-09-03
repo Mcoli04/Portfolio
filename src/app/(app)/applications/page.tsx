@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ApplicationStatusBadge } from "@/components/app/application-status-badge";
+import { documentStatusLabel } from "@/lib/applications/document-status";
 import { FileText, ExternalLink } from "lucide-react";
 import type { Application, Job } from "@/lib/types/database";
 
@@ -61,12 +62,14 @@ export default async function ApplicationsPage() {
             <div className="mt-3 flex flex-wrap items-center gap-3">
               {app.submitted_resume_id && (
                 <span className="flex items-center gap-1 text-xs text-slate-500">
-                  <FileText className="h-3.5 w-3.5" /> Tailored CV submitted
+                  <FileText className="h-3.5 w-3.5" />
+                  {documentStatusLabel("resume", app.status)}
                 </span>
               )}
               {app.cover_letter_id && (
                 <span className="flex items-center gap-1 text-xs text-slate-500">
-                  <FileText className="h-3.5 w-3.5" /> Cover letter submitted
+                  <FileText className="h-3.5 w-3.5" />
+                  {documentStatusLabel("cover_letter", app.status)}
                 </span>
               )}
               {app.jobs?.application_url && app.status === "manual_required" && (

@@ -36,6 +36,16 @@ export const integrationConfig = {
   workableAccountSubdomains: csv(process.env.WORKABLE_ACCOUNT_SUBDOMAINS),
   smartrecruitersCompanyIds: csv(process.env.SMARTRECRUITERS_COMPANY_IDS),
   ashbyJobBoardNames: csv(process.env.ASHBY_JOB_BOARD_NAMES),
+  /**
+   * Domains explicitly reviewed and approved for permitted browser
+   * automation (spec §18) — e.g. "boards.greenhouse.io" once someone has
+   * actually verified that employer's application flow works safely with
+   * the automation provider. Empty by default: with nothing allowlisted,
+   * a job with no other configured submission channel resolves straight
+   * to manual_required (via its real application_url) without ever
+   * attempting to launch a browser.
+   */
+  browserAutomationAllowedDomains: csv(process.env.BROWSER_AUTOMATION_ALLOWED_DOMAINS).map((d) => d.toLowerCase()),
 };
 
 export type IntegrationStatus = "LIVE" | "DEMO" | "NOT_CONFIGURED" | "DISABLED";
