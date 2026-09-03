@@ -10,14 +10,17 @@ export interface IngestSummary {
   jobsCreated: number;
   jobsUpdated: number;
   jobsDeduplicated: number;
+  jobsDeactivated: number;
   errors: { source: string; message: string }[];
 }
 
 /**
  * Job ingestion worker (spec §41). Pulls from every configured adapter,
- * normalizes, deduplicates against existing rows, and upserts into `jobs`.
- * Adapters that are NOT_CONFIGURED simply return no jobs — this function
- * never substitutes fabricated data for a missing integration.
+ * normalizes, deduplicates against existing rows, upserts into `jobs`, and
+ * — only after that source's fetch genuinely succeeded — reconciles closed
+ * jobs (see reconcileClosedJobs). Adapters that are NOT_CONFIGURED simply
+ * return no jobs — this function never substitutes fabricated data for a
+ * missing integration.
  */
 export async function ingestJobs(supabase: SupabaseClient): Promise<IngestSummary> {
   const summary: IngestSummary = {
@@ -26,6 +29,7 @@ export async function ingestJobs(supabase: SupabaseClient): Promise<IngestSummar
     jobsCreated: 0,
     jobsUpdated: 0,
     jobsDeduplicated: 0,
+    jobsDeactivated: 0,
     errors: [],
   };
 
@@ -52,18 +56,30 @@ export async function ingestJobs(supabase: SupabaseClient): Promise<IngestSummar
 
     if (status === "NOT_CONFIGURED" || status === "DISABLED") continue;
 
+    let fetched = 0;
+    let created = 0;
+    let updated = 0;
+    let deduplicated = 0;
+    let deactivated = 0;
+
     try {
       const rawJobs = await adapter.fetchJobs();
-      summary.jobsFetched += rawJobs.length;
+      fetched = rawJobs.length;
+      summary.jobsFetched += fetched;
+
+      const seenSourceJobIds = new Set<string>();
 
       for (const raw of rawJobs) {
         const normalized = adapter.normalizeJob(raw);
+        seenSourceJobIds.add(normalized.sourceJobId);
         const duplicate = findDuplicate(normalized, adapter.key, candidates);
 
         if (duplicate) {
           summary.jobsDeduplicated++;
+          deduplicated++;
           await upsertJob(supabase, adapter.key, sourceRow?.id ?? null, normalized, duplicate.id);
           summary.jobsUpdated++;
+          updated++;
           continue;
         }
 
@@ -81,13 +97,29 @@ export async function ingestJobs(supabase: SupabaseClient): Promise<IngestSummar
             source_job_id: normalized.sourceJobId,
           });
           summary.jobsCreated++;
+          created++;
+        } else if (!error) {
+          updated++;
         }
       }
+
+      // Reconciliation only runs once adapter.fetchJobs() above has
+      // resolved without throwing — a genuinely successful fetch for this
+      // source this run. A network/API failure throws (see
+      // BaseJobSourceAdapter.fetchJobs) and is caught below, skipping this
+      // entirely, so a transient outage can never be mistaken for "this
+      // source now has zero jobs" and wrongly deactivate everything.
+      deactivated = await reconcileClosedJobs(supabase, adapter.key, seenSourceJobIds);
+      summary.jobsDeactivated += deactivated;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown ingestion error";
       summary.errors.push({ source: adapter.key, message });
       await supabase.from("job_sources").update({ last_error: message }).eq("key", adapter.key);
     }
+
+    console.log(
+      `[job-ingest] source=${adapter.key} status=${status} fetched=${fetched} created=${created} updated=${updated} deduplicated=${deduplicated} deactivated=${deactivated}`
+    );
   }
 
   return summary;
@@ -142,6 +174,50 @@ async function upsertJob(
     .upsert(row, { onConflict: "source,source_job_id" })
     .select("id")
     .single();
+}
+
+/**
+ * Deactivates previously-active jobs for one source whose source_job_id
+ * wasn't present in that source's latest successful fetch — i.e. the
+ * listing closed or was removed upstream. Only ever called after a
+ * successful fetch (see call site above). Never deletes the row: a job's
+ * `applications`/`application_events` history stays fully intact, and the
+ * Applications page still renders it (jobs are only ever soft-deactivated,
+ * never removed), it just stops appearing in Discover once `active` is
+ * false. Uses "CLOSED" rather than expireStaleJobs()'s date-based
+ * "EXPIRED" status, since this reflects a source-confirmed removal rather
+ * than a reached expiry date.
+ */
+async function reconcileClosedJobs(
+  supabase: SupabaseClient,
+  sourceKey: string,
+  seenSourceJobIds: Set<string>
+): Promise<number> {
+  const { data: activeRows, error } = await supabase
+    .from("jobs")
+    .select("id, source_job_id")
+    .eq("source", sourceKey)
+    .eq("active", true);
+
+  if (error || !activeRows) return 0;
+
+  const staleIds = activeRows
+    .filter((row: { source_job_id: string }) => !seenSourceJobIds.has(row.source_job_id))
+    .map((row: { id: string }) => row.id);
+
+  if (staleIds.length === 0) return 0;
+
+  const { data: deactivatedRows, error: updateError } = await supabase
+    .from("jobs")
+    .update({ active: false, status: "CLOSED" })
+    .in("id", staleIds)
+    .select("id");
+
+  if (updateError) {
+    console.error(`[job-ingest] source=${sourceKey} reconciliation update failed`, updateError.message);
+    return 0;
+  }
+  return deactivatedRows?.length ?? 0;
 }
 
 /** Marks jobs past their expiry date (or no longer found live at the source) inactive (spec §25, §42). */

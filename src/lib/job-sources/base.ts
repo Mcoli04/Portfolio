@@ -23,13 +23,19 @@ export abstract class BaseJobSourceAdapter implements JobSourceAdapter {
     return this.isConfigured() ? "LIVE" : "NOT_CONFIGURED";
   }
 
+  /**
+   * A failed live fetch is re-thrown (after logging) rather than swallowed
+   * into an empty array: ingestJobs() needs to tell "the source legitimately
+   * has zero jobs right now" apart from "the fetch failed" so it never runs
+   * closed-job reconciliation off a failed/partial fetch.
+   */
   async fetchJobs(): Promise<RawSourceJob[]> {
     if (!this.isConfigured()) return [];
     try {
       return await this.fetchJobsLive();
     } catch (error) {
       console.error(`[job-source:${this.key}] fetchJobs failed`, error);
-      return [];
+      throw error;
     }
   }
 

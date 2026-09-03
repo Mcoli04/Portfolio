@@ -1,7 +1,13 @@
 import crypto from "crypto";
 import type { NormalizedJob } from "@/lib/job-sources/types";
 
-function normalizeText(value: string): string {
+/**
+ * Lowercases, NFKD-decomposes and strips diacritics/punctuation down to
+ * plain alphanumeric tokens (e.g. "Birġu (Vittoriosa)" -> "birgu
+ * vittoriosa"). Shared with the Greenhouse adapter's Malta-location
+ * matching so both use the exact same, already-proven text normalization.
+ */
+export function normalizeText(value: string): string {
   return value
     .toLowerCase()
     .normalize("NFKD")
