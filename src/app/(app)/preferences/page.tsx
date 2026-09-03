@@ -10,6 +10,7 @@ import {
   isAllMaltaLocations,
   isMaltaLocalitySelected,
   selectAllMaltaLocations,
+  toggleAllMaltaLocations,
   toggleMaltaLocality,
 } from "@/lib/malta-locations";
 import type { EmploymentType, ExperienceLevel, WorkType } from "@/lib/types/database";
@@ -73,9 +74,10 @@ export default function PreferencesPage() {
       const { data: prefs } = await supabase.from("job_preferences").select("*").eq("user_id", user.id).maybeSingle();
       if (prefs) {
         setJobTitles(prefs.job_titles?.join(", ") ?? "");
-        // A saved unrestricted preference (explicit "any", or legacy empty
-        // array) is shown as All Malta rather than an empty selection.
-        setLocations(isAllMaltaLocations(prefs.locations) ? selectAllMaltaLocations() : prefs.locations);
+        // Load the saved value as-is: ["any"] is All Malta, [] is no
+        // location selected, and either is a distinct, real state — never
+        // normalize an empty array into All Malta.
+        setLocations(prefs.locations ?? []);
         setWorkTypes(prefs.work_types ?? ["any"]);
         setEmploymentTypes(prefs.employment_types ?? []);
         setExperienceLevels(prefs.experience_levels ?? []);
@@ -164,7 +166,7 @@ export default function PreferencesPage() {
             <input
               type="checkbox"
               checked={isAllMaltaLocations(locations)}
-              onChange={() => setLocations(selectAllMaltaLocations())}
+              onChange={() => setLocations((prev) => toggleAllMaltaLocations(prev))}
               className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
             />
             All Malta
@@ -185,10 +187,11 @@ export default function PreferencesPage() {
             </div>
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            All Malta matches jobs in every locality — while it&apos;s active, every locality below shows as
-            selected, but only the All Malta preference is saved. Pick any individual locality to switch off All
-            Malta and match just that locality; you can then select as many specific localities as you like.
-            Re-selecting All Malta clears them and matches everywhere again.
+            All Malta matches jobs in every locality — while it&apos;s checked, every locality below shows as
+            selected too, but only the All Malta preference is saved. Clicking All Malta again turns it off and
+            clears the selection entirely. Pick any individual locality to switch off All Malta and match just
+            that locality; you can then select as many specific localities as you like. Re-checking All Malta
+            clears them and matches everywhere again.
           </p>
         </div>
 

@@ -1,4 +1,5 @@
 import type { Job, JobPreferences, Profile } from "@/lib/types/database";
+import { isAllMaltaLocations } from "@/lib/malta-locations";
 import { getOpenAIClient, CHAT_MODEL } from "./openai-client";
 
 export interface MatchResult {
@@ -48,8 +49,11 @@ export function computeMatchScore(profile: Profile, preferences: JobPreferences 
   if (bestTitleOverlap > 0.5) reasons.push(`The role title closely matches your target job titles`);
 
   // Location — 15 pts
+  // An empty locations array means the user has no location selection at
+  // all (distinct from explicitly choosing "any"/All Malta) and is treated
+  // as no locality match, not as unrestricted — see src/lib/malta-locations.ts.
   const locations = preferences?.locations ?? [];
-  const locationIsAny = locations.length === 0 || locations.includes("any");
+  const locationIsAny = isAllMaltaLocations(locations);
   const localityMatch = job.locality && locations.some((l) => normalize(l) === normalize(job.locality!));
   if (locationIsAny || localityMatch) {
     score += 15;

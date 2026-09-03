@@ -120,10 +120,19 @@ export function normalizeLocality(input: string): MaltaLocality | null {
  * used by both the onboarding Preferences step and the standalone Preferences
  * settings page so the two forms can never drift apart.
  *
+ * Three distinct states are represented, and MUST be kept distinct anywhere
+ * this array is read or written:
+ *   - ["any"]                    — All Malta: match every locality (unrestricted)
+ *   - []                         — no location selected (nothing chosen yet)
+ *   - ["Sliema", "Gżira", ...]   — one or more specific localities
+ *
  * "All Malta" is stored as the sentinel value "any" — the same value
- * computeMatchScore (src/lib/ai/matching.ts) already treats as "no locality
+ * computeMatchScore (src/lib/ai/matching.ts) treats as "no locality
  * restriction". It is deliberately kept out of MALTA_LOCALITIES so it can
- * never be confused with, or persisted as, a real Maltese locality.
+ * never be confused with, or persisted as, a real Maltese locality. An empty
+ * array is NOT treated as All Malta — it means the user currently has no
+ * location selection at all, and must be handled as its own distinct state
+ * everywhere (UI checkboxes, saved preferences, and match scoring).
  */
 export const ALL_MALTA_LOCATIONS_VALUE = "any";
 
@@ -132,22 +141,33 @@ export function selectAllMaltaLocations(): string[] {
   return [ALL_MALTA_LOCATIONS_VALUE];
 }
 
-/** True when a saved/selected locations value is unrestricted (All Malta), including legacy empty arrays. */
+/** True only when a locations value explicitly contains the All Malta sentinel — an empty array is a distinct, non-All-Malta state. */
 export function isAllMaltaLocations(locations: string[] | null | undefined): boolean {
-  return !locations || locations.length === 0 || locations.includes(ALL_MALTA_LOCATIONS_VALUE);
+  return !!locations && locations.includes(ALL_MALTA_LOCATIONS_VALUE);
+}
+
+/**
+ * True toggle for the "All Malta" control: OFF → ON sets the unrestricted
+ * sentinel (clearing any individually selected localities); ON → OFF clears
+ * the selection entirely to `[]` ("no location selected"), it does not
+ * restore whatever individual localities were selected before All Malta was
+ * turned on. Clicking All Malta while individual localities are selected
+ * (but All Malta itself is off) also turns it on, clearing those localities.
+ */
+export function toggleAllMaltaLocations(current: string[]): string[] {
+  return isAllMaltaLocations(current) ? [] : selectAllMaltaLocations();
 }
 
 /**
  * Toggles a single locality in/out of a locations selection. Selecting any
- * individual locality clears "All Malta" first; deselecting the last
- * remaining individual locality falls back to "All Malta" rather than
- * leaving an ambiguous empty selection.
+ * individual locality clears "All Malta" first, leaving only that locality
+ * selected. Deselecting the last remaining individual locality results in
+ * `[]` ("no location selected") rather than falling back to All Malta.
  */
 export function toggleMaltaLocality(current: string[], locality: string): string[] {
   const withoutAllMalta = current.filter((l) => l !== ALL_MALTA_LOCATIONS_VALUE);
   if (withoutAllMalta.includes(locality)) {
-    const next = withoutAllMalta.filter((l) => l !== locality);
-    return next.length ? next : selectAllMaltaLocations();
+    return withoutAllMalta.filter((l) => l !== locality);
   }
   return [...withoutAllMalta, locality];
 }
@@ -158,7 +178,9 @@ export function toggleMaltaLocality(current: string[], locality: string): string
  * displays as checked even though the saved value stays the "any" sentinel
  * — the full locality list is never written out. Clicking any locality
  * while All Malta is active still goes through toggleMaltaLocality, which
- * drops "any" and keeps only that one locality, exiting All Malta mode.
+ * drops "any" and keeps only that one locality, exiting All Malta mode. When
+ * nothing is selected (`[]`), every checkbox — including All Malta —
+ * correctly renders unchecked.
  */
 export function isMaltaLocalitySelected(locations: string[], locality: string): boolean {
   return isAllMaltaLocations(locations) || locations.includes(locality);
