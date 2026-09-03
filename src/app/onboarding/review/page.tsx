@@ -10,11 +10,13 @@ import { OnboardingProgress } from "@/components/onboarding/onboarding-progress"
 import { OnboardingContinueButton } from "@/components/onboarding/onboarding-continue-button";
 import { OnboardingBackButton } from "@/components/onboarding/onboarding-back-button";
 import { getPreviousPageHref } from "@/lib/onboarding-flow";
+import { splitFullName, joinFullName } from "@/lib/name";
 import { cn } from "@/lib/utils";
 import type { ParsedCvData } from "@/lib/types/database";
 
 interface FormState {
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
   location: string;
@@ -27,7 +29,8 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
-  fullName: "",
+  firstName: "",
+  lastName: "",
   email: "",
   phone: "",
   location: "",
@@ -72,8 +75,14 @@ export default function ReviewCvStep() {
         setHadWarnings((parsed?.warnings?.length ?? 0) > 0);
       }
 
+      // Prefer explicit first_name/last_name the user has already confirmed;
+      // only fall back to splitting a full name (from the CV parse, or
+      // whatever was captured at signup) as a starting suggestion — never
+      // silently overwriting a name the user already reviewed and saved.
+      const suggestedSplit = splitFullName(parsed?.fullName ?? profile?.full_name ?? "");
       setForm({
-        fullName: parsed?.fullName ?? profile?.full_name ?? "",
+        firstName: profile?.first_name ?? suggestedSplit.firstName,
+        lastName: profile?.last_name ?? suggestedSplit.lastName,
         email: parsed?.email ?? profile?.email ?? user.email ?? "",
         phone: parsed?.phone ?? profile?.phone ?? "",
         location: parsed?.location ?? profile?.location ?? "",
@@ -105,7 +114,12 @@ export default function ReviewCvStep() {
       const { error } = await supabase
         .from("profiles")
         .update({
-          full_name: form.fullName || null,
+          first_name: form.firstName || null,
+          last_name: form.lastName || null,
+          // Kept in sync from the two explicit fields so every existing
+          // full_name reader (cover letters, the automation engine's
+          // candidate name, notifications) keeps working unchanged.
+          full_name: joinFullName(form.firstName, form.lastName) || null,
           phone: form.phone || null,
           location: form.location || null,
           years_experience: form.yearsExperience ? Number(form.yearsExperience) : null,
@@ -159,7 +173,8 @@ export default function ReviewCvStep() {
 
       <Section title="About you">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Full name" value={form.fullName} onChange={(v) => update("fullName", v)} needsAttention={!form.fullName} />
+          <Field label="First name" value={form.firstName} onChange={(v) => update("firstName", v)} needsAttention={!form.firstName} />
+          <Field label="Last name" value={form.lastName} onChange={(v) => update("lastName", v)} needsAttention={!form.lastName} />
           <Field label="Email" value={form.email} onChange={(v) => update("email", v)} type="email" />
           <Field label="Phone" value={form.phone} onChange={(v) => update("phone", v)} needsAttention={!form.phone} />
           <Field label="Location" value={form.location} onChange={(v) => update("location", v)} needsAttention={!form.location} />

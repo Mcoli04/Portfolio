@@ -15,6 +15,9 @@ const COMMON_QUESTION_KEYS: Record<string, RegExp> = {
   relocation: /relocat/i,
   remote_preference: /remote|hybrid|on-?site preference/i,
   languages: /which languages|language(s)? do you speak/i,
+  linkedin_url: /linkedin/i,
+  portfolio_url: /portfolio|personal website|github/i,
+  sponsorship_requirement: /sponsorship/i,
 };
 
 function keyForQuestion(questionText: string): string | null {

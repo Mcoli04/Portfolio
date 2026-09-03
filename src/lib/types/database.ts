@@ -35,6 +35,15 @@ export type CareerGoal =
   | "first_job";
 export type RemoteScope = "malta_only" | "eu_eea" | "europe" | "worldwide";
 
+/**
+ * Explicit, user-provided only — never inferred from CV text, nationality
+ * guesses, or location. "prefer_not_to_say" is a real, distinct answer
+ * (the user engaged with the question but chose not to share) and is
+ * deliberately never used to auto-answer a real application's work
+ * authorization question — see src/lib/applications/work-authorization.ts.
+ */
+export type WorkAuthorization = "eu_eea_swiss_citizen" | "malta_permit_holder" | "requires_sponsorship" | "prefer_not_to_say";
+
 export type ApplicationMethod = "api" | "ats" | "browser_automation" | "email" | "internal" | "manual";
 
 export type ApplicationStatus =
@@ -89,6 +98,16 @@ export interface Profile {
   id: string;
   email: string;
   full_name: string | null;
+  /**
+   * Split name fields for a future official application-submission
+   * integration (e.g. Greenhouse's Apply API requires first/last name
+   * separately). full_name remains the source of truth for every existing
+   * display/salutation use — these are additive, kept in sync with it
+   * whenever the user sets them via onboarding or Profile settings, never
+   * derived on the fly from full_name at submission time.
+   */
+  first_name: string | null;
+  last_name: string | null;
   phone: string | null;
   location: string | null;
   headline: string | null;
@@ -110,6 +129,7 @@ export interface Profile {
   work_situation: WorkSituation | null;
   move_timeline: MoveTimeline | null;
   career_goals: CareerGoal[];
+  work_authorization: WorkAuthorization | null;
   created_at: string;
   updated_at: string;
 }

@@ -11,7 +11,8 @@ import { MultiChoiceQuestion } from "@/components/onboarding/multi-choice-questi
 import { OnboardingContinueButton } from "@/components/onboarding/onboarding-continue-button";
 import { OnboardingBackButton } from "@/components/onboarding/onboarding-back-button";
 import { GOALS_STEPS, getPreviousPageHref, type GoalsStepKey } from "@/lib/onboarding-flow";
-import type { CareerGoal, MoveTimeline, WorkSituation } from "@/lib/types/database";
+import { WORK_AUTHORIZATION_OPTIONS, workAuthorizationAnswerText } from "@/lib/applications/work-authorization";
+import type { CareerGoal, MoveTimeline, WorkAuthorization, WorkSituation } from "@/lib/types/database";
 
 const WORK_SITUATIONS: { value: WorkSituation; label: string }[] = [
   { value: "employed", label: "Employed" },
@@ -49,6 +50,7 @@ function GoalsStep() {
   const [questionIndex, setQuestionIndex] = useState(() => initialStepIndex(searchParams.get("step")));
   const [workSituation, setWorkSituation] = useState<WorkSituation | null>(null);
   const [moveTimeline, setMoveTimeline] = useState<MoveTimeline | null>(null);
+  const [workAuthorization, setWorkAuthorization] = useState<WorkAuthorization | null>(null);
   const [careerGoals, setCareerGoals] = useState<CareerGoal[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -64,11 +66,12 @@ function GoalsStep() {
       }
       const { data: profile } = await supabase
         .from("profiles")
-        .select("work_situation, move_timeline, career_goals")
+        .select("work_situation, move_timeline, work_authorization, career_goals")
         .eq("id", user.id)
         .single();
       if (profile?.work_situation) setWorkSituation(profile.work_situation);
       if (profile?.move_timeline) setMoveTimeline(profile.move_timeline);
+      if (profile?.work_authorization) setWorkAuthorization(profile.work_authorization);
       if (profile?.career_goals?.length) setCareerGoals(profile.career_goals);
       setLoading(false);
     }
@@ -101,6 +104,7 @@ function GoalsStep() {
         .update({
           work_situation: workSituation,
           move_timeline: moveTimeline,
+          work_authorization: workAuthorization,
           career_goals: careerGoals,
           onboarding_step: "preferences",
         })
@@ -110,6 +114,28 @@ function GoalsStep() {
         toast.error(error.message);
         return;
       }
+
+      // Keep the reusable answer library in sync so a future application
+      // can find a verified answer for this question — but only when the
+      // user gave a real answer. "prefer_not_to_say" (or no answer at all)
+      // intentionally does NOT create/overwrite an entry: a missing entry
+      // is exactly what tells future application processing to leave this
+      // question for manual review instead of guessing.
+      const answerText = workAuthorizationAnswerText(workAuthorization);
+      if (answerText) {
+        await supabase.from("answer_library").upsert(
+          {
+            user_id: user.id,
+            question_key: "work_authorization",
+            question_text: "Are you authorized to work in this location?",
+            answer_text: answerText,
+            answer_type: "text",
+            verified: true,
+          },
+          { onConflict: "user_id,question_key" }
+        );
+      }
+
       router.push("/onboarding/preferences");
     } finally {
       setSaving(false);
@@ -157,6 +183,19 @@ function GoalsStep() {
           )}
 
           {questionIndex === 2 && (
+            <SingleChoiceQuestion
+              question="Are you authorized to work in Malta?"
+              helper="This helps us flag applications that need your input on this question — we'll never answer it for you without asking."
+              options={WORK_AUTHORIZATION_OPTIONS}
+              value={workAuthorization}
+              onSelect={(v) => {
+                setWorkAuthorization(v);
+                setTimeout(goNext, 300);
+              }}
+            />
+          )}
+
+          {questionIndex === 3 && (
             <>
               <MultiChoiceQuestion
                 question="What are you hoping for in your next role?"

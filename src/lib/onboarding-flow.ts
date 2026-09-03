@@ -29,8 +29,8 @@ const PAGE_ROUTES: Record<OnboardingPageId, string> = {
   consent: "/onboarding/consent",
 };
 
-export type GoalsStepKey = "workSituation" | "moveTimeline" | "careerGoals";
-export const GOALS_STEPS: GoalsStepKey[] = ["workSituation", "moveTimeline", "careerGoals"];
+export type GoalsStepKey = "workSituation" | "moveTimeline" | "workAuthorization" | "careerGoals";
+export const GOALS_STEPS: GoalsStepKey[] = ["workSituation", "moveTimeline", "workAuthorization", "careerGoals"];
 
 export type PreferencesStepKey =
   | "jobTitle"

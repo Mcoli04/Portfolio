@@ -21,7 +21,10 @@ export default async function OnboardingLayout({ children }: { children: React.R
   // still pending, before any profile update could run).
   const metadataName = typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null;
   if (profile && !profile.full_name && metadataName) {
-    await supabase.from("profiles").update({ full_name: metadataName }).eq("id", user.id);
+    // At signup this metadata value is just the first name the user typed
+    // (see (auth)/signup), so it's a safe, correct first_name value too —
+    // not a heuristic split of a longer name.
+    await supabase.from("profiles").update({ full_name: metadataName, first_name: metadataName }).eq("id", user.id);
   }
 
   return <OnboardingShell>{children}</OnboardingShell>;

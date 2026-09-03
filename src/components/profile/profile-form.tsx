@@ -4,10 +4,13 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { splitFullName, joinFullName } from "@/lib/name";
 import type { Profile } from "@/lib/types/database";
 
 export function ProfileForm({ profile }: { profile: Profile }) {
-  const [fullName, setFullName] = useState(profile.full_name ?? "");
+  const suggestedSplit = splitFullName(profile.full_name ?? "");
+  const [firstName, setFirstName] = useState(profile.first_name ?? suggestedSplit.firstName);
+  const [lastName, setLastName] = useState(profile.last_name ?? suggestedSplit.lastName);
   const [phone, setPhone] = useState(profile.phone ?? "");
   const [location, setLocation] = useState(profile.location ?? "");
   const [headline, setHeadline] = useState(profile.headline ?? "");
@@ -21,7 +24,9 @@ export function ProfileForm({ profile }: { profile: Profile }) {
       const { error } = await supabase
         .from("profiles")
         .update({
-          full_name: fullName || null,
+          first_name: firstName || null,
+          last_name: lastName || null,
+          full_name: joinFullName(firstName, lastName) || null,
           phone: phone || null,
           location: location || null,
           headline: headline || null,
@@ -40,8 +45,12 @@ export function ProfileForm({ profile }: { profile: Profile }) {
       <h2 className="text-sm font-semibold text-slate-900">Personal details</h2>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Full name</label>
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" />
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">First name</label>
+          <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">Last name</label>
+          <input value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" />
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-700">Phone</label>

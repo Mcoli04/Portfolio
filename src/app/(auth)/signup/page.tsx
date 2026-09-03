@@ -72,8 +72,11 @@ export default function SignupPage() {
       if (data.session && data.user) {
         // Belt-and-suspenders: the profile row's full_name is normally
         // backfilled from user_metadata on first onboarding load, but set
-        // it immediately too when we already have a session.
-        await supabase.from("profiles").update({ full_name: firstName }).eq("id", data.user.id);
+        // it immediately too when we already have a session. first_name is
+        // exactly what this field collects, so it's set directly here too
+        // — the onboarding review step still lets the user correct it, and
+        // still needs to collect last_name.
+        await supabase.from("profiles").update({ full_name: firstName, first_name: firstName }).eq("id", data.user.id);
         toast.success(`Welcome, ${firstName} — let's set up your profile.`);
         router.push("/onboarding");
         router.refresh();
