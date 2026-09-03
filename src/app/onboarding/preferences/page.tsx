@@ -3,8 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Building2, Home, Shuffle, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { ChipGroup } from "@/components/ui/chip-select";
+import { OptionCard } from "@/components/ui/option-card";
+import { TagInput } from "@/components/ui/tag-input";
 import {
   MALTA_LOCALITIES,
   isAllMaltaLocations,
@@ -13,14 +17,29 @@ import {
   toggleAllMaltaLocations,
   toggleMaltaLocality,
 } from "@/lib/malta-locations";
-import { parseSalaryField, validateSalaryRange } from "@/lib/validation/preferences";
+import { cn } from "@/lib/utils";
 import type { EmploymentType, ExperienceLevel, WorkType } from "@/lib/types/database";
 
-const WORK_TYPES: { value: WorkType | "any"; label: string }[] = [
-  { value: "any", label: "Any" },
-  { value: "remote", label: "Remote" },
-  { value: "hybrid", label: "Hybrid" },
-  { value: "onsite", label: "On-site" },
+const JOB_TITLE_SUGGESTIONS = [
+  "Accountant",
+  "Sales Assistant",
+  "Software Developer",
+  "Customer Support",
+  "Administrator",
+  "Marketing Executive",
+  "Warehouse Operative",
+  "Receptionist",
+  "Nurse",
+  "Teacher",
+  "Driver",
+  "Chef",
+];
+
+const WORK_PREFERENCES: { value: WorkType | "any"; title: string; icon: typeof Home }[] = [
+  { value: "onsite", title: "On-site", icon: Building2 },
+  { value: "hybrid", title: "Hybrid", icon: Shuffle },
+  { value: "remote", title: "Remote", icon: Home },
+  { value: "any", title: "I'm flexible", icon: Sparkles },
 ];
 
 const EMPLOYMENT_TYPES: { value: EmploymentType; label: string }[] = [
@@ -33,11 +52,11 @@ const EMPLOYMENT_TYPES: { value: EmploymentType; label: string }[] = [
 
 const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string }[] = [
   { value: "internship", label: "Internship" },
-  { value: "entry", label: "Entry" },
+  { value: "entry", label: "Just starting out" },
   { value: "junior", label: "Junior" },
-  { value: "mid", label: "Mid" },
+  { value: "mid", label: "Mid-level" },
   { value: "senior", label: "Senior" },
-  { value: "lead", label: "Lead" },
+  { value: "lead", label: "Lead / Management" },
   { value: "executive", label: "Executive" },
 ];
 
@@ -48,23 +67,12 @@ function toggle<T>(list: T[], value: T): T[] {
 export default function PreferencesStep() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
-  const [jobTitles, setJobTitles] = useState("");
+  const [jobTitles, setJobTitles] = useState<string[]>([]);
   // New users start matched against every locality in Malta.
   const [locations, setLocations] = useState<string[]>(selectAllMaltaLocations());
-  const [workTypes, setWorkTypes] = useState<(WorkType | "any")[]>(["any"]);
+  const [workType, setWorkType] = useState<WorkType | "any">("any");
   const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
   const [experienceLevels, setExperienceLevels] = useState<ExperienceLevel[]>([]);
-  const [salaryMin, setSalaryMin] = useState("");
-  const [salaryMax, setSalaryMax] = useState("");
-  const [currency, setCurrency] = useState("EUR");
-  const [industries, setIndustries] = useState("");
-  const [keywordsInclude, setKeywordsInclude] = useState("");
-  const [keywordsExclude, setKeywordsExclude] = useState("");
-  const [visaSponsorship, setVisaSponsorship] = useState(false);
-  const [languages, setLanguages] = useState("");
-  const [recentlyPosted, setRecentlyPosted] = useState(false);
-  const [salaryDisclosed, setSalaryDisclosed] = useState(false);
-  const salaryError = validateSalaryRange(salaryMin, salaryMax);
 
   useEffect(() => {
     async function prefillFromProfile() {
@@ -74,16 +82,12 @@ export default function PreferencesStep() {
       } = await supabase.auth.getUser();
       if (!user) return;
       const { data: profile } = await supabase.from("profiles").select("job_titles").eq("id", user.id).single();
-      if (profile?.job_titles?.length) setJobTitles(profile.job_titles.join(", "));
+      if (profile?.job_titles?.length) setJobTitles(profile.job_titles);
     }
     prefillFromProfile();
   }, []);
 
   async function handleSave() {
-    if (salaryError) {
-      toast.error(salaryError);
-      return;
-    }
     setSaving(true);
     try {
       const supabase = createClient();
@@ -95,22 +99,12 @@ export default function PreferencesStep() {
       const { error } = await supabase.from("job_preferences").upsert(
         {
           user_id: user.id,
-          job_titles: jobTitles.split(",").map((v) => v.trim()).filter(Boolean),
+          job_titles: jobTitles,
           custom_titles: [],
           locations,
-          work_types: workTypes.includes("any") ? ["any"] : workTypes,
+          work_types: workType === "any" ? ["any"] : [workType],
           employment_types: employmentTypes,
           experience_levels: experienceLevels,
-          salary_min: parseSalaryField(salaryMin),
-          salary_max: parseSalaryField(salaryMax),
-          salary_currency: currency,
-          industries: industries.split(",").map((v) => v.trim()).filter(Boolean),
-          keywords_include: keywordsInclude.split(",").map((v) => v.trim()).filter(Boolean),
-          keywords_exclude: keywordsExclude.split(",").map((v) => v.trim()).filter(Boolean),
-          visa_sponsorship_required: visaSponsorship,
-          languages: languages.split(",").map((v) => v.trim()).filter(Boolean),
-          recently_posted_only: recentlyPosted,
-          salary_disclosed_only: salaryDisclosed,
         },
         { onConflict: "user_id" }
       );
@@ -119,8 +113,8 @@ export default function PreferencesStep() {
         return;
       }
 
-      await supabase.from("profiles").update({ onboarding_step: "auto_apply_mode" }).eq("id", user.id);
-      router.push("/onboarding/auto-apply");
+      await supabase.from("profiles").update({ onboarding_step: "salary" }).eq("id", user.id);
+      router.push("/onboarding/salary");
     } finally {
       setSaving(false);
     }
@@ -128,172 +122,88 @@ export default function PreferencesStep() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-slate-900">What are you looking for?</h1>
-      <p className="mt-1 text-sm text-slate-600">Set your preferences — you can refine these anytime from Settings.</p>
+      <h1 className="text-2xl font-bold text-slate-900">What kind of job would you like next?</h1>
+      <p className="mt-2 text-sm text-slate-600">This helps us bring the right roles to the top for you.</p>
 
-      <div className="mt-6 space-y-6">
+      <div className="mt-6 space-y-7">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Job titles (comma separated)</label>
-          <input
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">Job title</label>
+          <TagInput
             value={jobTitles}
-            onChange={(e) => setJobTitles(e.target.value)}
-            placeholder="e.g. Software Engineer, Frontend Developer"
-            className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+            onChange={setJobTitles}
+            suggestions={JOB_TITLE_SUGGESTIONS}
+            placeholder="e.g. Accountant, Sales Assistant"
           />
         </div>
 
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Locations</label>
-          <label className="mb-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700">
-            <input
-              type="checkbox"
-              checked={isAllMaltaLocations(locations)}
-              onChange={() => setLocations((prev) => toggleAllMaltaLocations(prev))}
-              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-            />
-            All Malta
-          </label>
-          <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 p-3">
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-              {MALTA_LOCALITIES.map((locality) => (
-                <label key={locality} className="flex items-center gap-1.5 text-xs text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={isMaltaLocalitySelected(locations, locality)}
-                    onChange={() => setLocations((prev) => toggleMaltaLocality(prev, locality))}
-                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                  />
-                  {locality}
-                </label>
-              ))}
-            </div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">Where in Malta?</label>
+          <button
+            type="button"
+            onClick={() => setLocations((prev) => toggleAllMaltaLocations(prev))}
+            aria-pressed={isAllMaltaLocations(locations)}
+            className={cn(
+              "flex w-full items-center justify-between rounded-2xl border-2 px-4 py-3 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2",
+              isAllMaltaLocations(locations)
+                ? "border-brand-600 bg-brand-50/60 text-brand-700"
+                : "border-slate-200 text-slate-700 hover:border-brand-300"
+            )}
+          >
+            Anywhere in Malta
+          </button>
+          <div className="mt-3 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-2xl border border-slate-200 p-3">
+            {MALTA_LOCALITIES.map((locality) => (
+              <button
+                key={locality}
+                type="button"
+                onClick={() => setLocations((prev) => toggleMaltaLocality(prev, locality))}
+                aria-pressed={isMaltaLocalitySelected(locations, locality)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500",
+                  isMaltaLocalitySelected(locations, locality)
+                    ? "border-brand-600 bg-brand-600 text-white"
+                    : "border-slate-200 text-slate-600 hover:border-brand-300"
+                )}
+              >
+                {locality}
+              </button>
+            ))}
           </div>
-          <p className="mt-1 text-xs text-slate-400">
-            All Malta matches jobs in every locality — while it&apos;s checked, every locality below shows as
-            selected too, but only the All Malta preference is saved. Clicking All Malta again turns it off and
-            clears the selection entirely. Pick any individual locality to switch off All Malta and match just
-            that locality; you can then select as many specific localities as you like. Re-checking All Malta
-            clears them and matches everywhere again.
+          <p className="mt-1.5 text-xs text-slate-400">
+            Pick specific localities to narrow things down — that switches off Anywhere in Malta. Tap Anywhere in
+            Malta again any time to match everywhere.
           </p>
         </div>
 
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Work type</label>
-          <div className="flex flex-wrap gap-2">
-            {WORK_TYPES.map((wt) => (
-              <Chip key={wt.value} active={workTypes.includes(wt.value)} onClick={() => setWorkTypes((prev) => toggle(prev, wt.value))}>
-                {wt.label}
-              </Chip>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">Work preference</label>
+          <div className="grid grid-cols-2 gap-3">
+            {WORK_PREFERENCES.map((option) => (
+              <OptionCard
+                key={option.value}
+                selected={workType === option.value}
+                onClick={() => setWorkType(option.value)}
+                icon={option.icon}
+                title={option.title}
+              />
             ))}
           </div>
         </div>
 
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-700">Employment type</label>
-          <div className="flex flex-wrap gap-2">
-            {EMPLOYMENT_TYPES.map((et) => (
-              <Chip key={et.value} active={employmentTypes.includes(et.value)} onClick={() => setEmploymentTypes((prev) => toggle(prev, et.value))}>
-                {et.label}
-              </Chip>
-            ))}
-          </div>
+          <ChipGroup options={EMPLOYMENT_TYPES} value={employmentTypes} onToggle={(v) => setEmploymentTypes((prev) => toggle(prev, v))} />
         </div>
 
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-700">Experience level</label>
-          <div className="flex flex-wrap gap-2">
-            {EXPERIENCE_LEVELS.map((el) => (
-              <Chip key={el.value} active={experienceLevels.includes(el.value)} onClick={() => setExperienceLevels((prev) => toggle(prev, el.value))}>
-                {el.label}
-              </Chip>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Min salary</label>
-              <input
-                type="number"
-                min={0}
-                value={salaryMin}
-                onChange={(e) => setSalaryMin(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Max salary</label>
-              <input
-                type="number"
-                min={0}
-                value={salaryMax}
-                onChange={(e) => setSalaryMax(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Currency</label>
-              <input value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
-            </div>
-          </div>
-          {salaryError && <p className="mt-1.5 text-xs text-red-600">{salaryError}</p>}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Industries (comma separated)</label>
-          <input value={industries} onChange={(e) => setIndustries(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" />
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Include keywords</label>
-            <input value={keywordsInclude} onChange={(e) => setKeywordsInclude(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Exclude keywords</label>
-            <input value={keywordsExclude} onChange={(e) => setKeywordsExclude(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" />
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Languages (comma separated)</label>
-          <input value={languages} onChange={(e) => setLanguages(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" />
-        </div>
-
-        <div className="space-y-2">
-          <ToggleRow label="Require visa sponsorship" checked={visaSponsorship} onChange={setVisaSponsorship} />
-          <ToggleRow label="Recently posted only" checked={recentlyPosted} onChange={setRecentlyPosted} />
-          <ToggleRow label="Salary disclosed only" checked={salaryDisclosed} onChange={setSalaryDisclosed} />
+          <ChipGroup options={EXPERIENCE_LEVELS} value={experienceLevels} onToggle={(v) => setExperienceLevels((prev) => toggle(prev, v))} />
         </div>
       </div>
 
-      <Button onClick={handleSave} disabled={saving || !!salaryError} className="mt-8 w-full">
+      <Button onClick={handleSave} disabled={saving} size="lg" className="mt-8 w-full rounded-full">
         {saving ? "Saving..." : "Continue"}
       </Button>
     </div>
-  );
-}
-
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-        active ? "border-brand-600 bg-brand-600 text-white" : "border-slate-200 text-slate-600 hover:border-brand-300"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-700">
-      {label}
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-    </label>
   );
 }

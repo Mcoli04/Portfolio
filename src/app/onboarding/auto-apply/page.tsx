@@ -3,36 +3,39 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Zap, GitBranch, ListChecks } from "lucide-react";
+import { ChevronDown, MousePointerClick, Zap as ZapIcon, Gauge } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { OptionCard } from "@/components/ui/option-card";
 import type { AutoApplyMode } from "@/lib/types/database";
 
-const MODES: { value: AutoApplyMode; title: string; description: string; icon: typeof Zap }[] = [
+const PRIMARY_MODES: { value: AutoApplyMode; title: string; description: string; icon: typeof MousePointerClick; badge?: string }[] = [
   {
-    value: "auto",
-    title: "Auto Apply",
-    description: "Swipe right automatically submits supported applications immediately.",
-    icon: Zap,
+    value: "review",
+    title: "I choose every job",
+    description: "Swipe right and we'll prepare the application for you.",
+    icon: MousePointerClick,
+    badge: "Recommended",
   },
   {
     value: "hybrid",
-    title: "Hybrid",
-    description: "90%+ matches apply automatically, 70-89% ask you to confirm first, below 70% never applies automatically.",
-    icon: GitBranch,
-  },
-  {
-    value: "review",
-    title: "Review",
-    description: "Swipe right adds the job to a review queue — nothing is submitted until you confirm it.",
-    icon: ListChecks,
+    title: "Help me apply faster",
+    description: "Sqwer can fill repetitive application details, but you'll stay in control.",
+    icon: Gauge,
   },
 ];
 
+const ADVANCED_MODE: { value: AutoApplyMode; title: string; description: string; icon: typeof ZapIcon } = {
+  value: "auto",
+  title: "Apply automatically",
+  description: "Sqwer applies right away to your strongest matches, without asking first each time.",
+  icon: ZapIcon,
+};
+
 export default function AutoApplyModeStep() {
   const router = useRouter();
-  const [selected, setSelected] = useState<AutoApplyMode>("hybrid");
+  const [selected, setSelected] = useState<AutoApplyMode>("review");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function handleContinue() {
@@ -59,32 +62,46 @@ export default function AutoApplyModeStep() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-slate-900">Choose your Auto Apply mode</h1>
-      <p className="mt-1 text-sm text-slate-600">You can change this anytime from Settings.</p>
+      <h1 className="text-2xl font-bold text-slate-900">How would you like Sqwer to help you apply?</h1>
+      <p className="mt-2 text-sm text-slate-600">You can change this anytime from Settings.</p>
 
       <div className="mt-6 space-y-3">
-        {MODES.map((mode) => (
-          <button
+        {PRIMARY_MODES.map((mode) => (
+          <OptionCard
             key={mode.value}
-            type="button"
+            selected={selected === mode.value}
             onClick={() => setSelected(mode.value)}
-            className={cn(
-              "flex w-full items-start gap-4 rounded-2xl border p-4 text-left transition",
-              selected === mode.value ? "border-brand-600 bg-brand-50/50 ring-1 ring-brand-600" : "border-slate-200 hover:border-slate-300"
-            )}
-          >
-            <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", selected === mode.value ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-500")}>
-              <mode.icon className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="font-semibold text-slate-900">{mode.title}</p>
-              <p className="mt-0.5 text-sm text-slate-600">{mode.description}</p>
-            </div>
-          </button>
+            icon={mode.icon}
+            title={mode.title}
+            description={mode.description}
+            badge={mode.badge}
+          />
         ))}
       </div>
 
-      <Button onClick={handleContinue} disabled={saving} className="mt-8 w-full">
+      <button
+        type="button"
+        onClick={() => setShowAdvanced((v) => !v)}
+        className="mt-5 flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-700"
+        aria-expanded={showAdvanced}
+      >
+        Advanced options
+        <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+      </button>
+
+      {showAdvanced && (
+        <div className="mt-3">
+          <OptionCard
+            selected={selected === ADVANCED_MODE.value}
+            onClick={() => setSelected(ADVANCED_MODE.value)}
+            icon={ADVANCED_MODE.icon}
+            title={ADVANCED_MODE.title}
+            description={ADVANCED_MODE.description}
+          />
+        </div>
+      )}
+
+      <Button onClick={handleContinue} disabled={saving} size="lg" className="mt-8 w-full rounded-full">
         {saving ? "Saving..." : "Continue"}
       </Button>
     </div>

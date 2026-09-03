@@ -4,7 +4,7 @@ const PASSWORD_MIN_LENGTH = 6;
 
 /**
  * Single source of truth for password strength rules — shared by the zod
- * schema (real validation) and the signup page's live checklist UI, so the
+ * schema (real validation) and the signup flow's live checklist UI, so the
  * two can never drift out of sync.
  */
 export const PASSWORD_REQUIREMENTS: { id: string; label: string; test: (password: string) => boolean }[] = [
@@ -29,24 +29,32 @@ function unmetPasswordRequirements(password: string): string[] {
   return PASSWORD_REQUIREMENTS.filter((requirement) => !requirement.test(password)).map((requirement) => requirement.label);
 }
 
-export const signupSchema = z
-  .object({
-    email: z.string().email("Enter a valid email address"),
-    password: z.string().superRefine((password, ctx) => {
-      const missing = unmetPasswordRequirements(password);
-      if (missing.length > 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Password must include: ${missing.join(", ")}`,
-        });
-      }
-    }),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  });
+export const passwordSchema = z.string().superRefine((password, ctx) => {
+  const missing = unmetPasswordRequirements(password);
+  if (missing.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Password must include: ${missing.join(", ")}`,
+    });
+  }
+});
+
+export const emailSchema = z.string().email("Enter a valid email address");
+
+export const firstNameSchema = z.string().trim().min(1, "Enter your first name");
+
+/**
+ * The signup wizard collects name, email and password across separate
+ * screens; this schema validates the combined result before the account is
+ * created. There is no confirmPassword field — the live requirements
+ * checklist gives the user enough confidence in what they typed without
+ * asking them to enter the password twice.
+ */
+export const signupSchema = z.object({
+  firstName: firstNameSchema,
+  email: emailSchema,
+  password: passwordSchema,
+});
 
 export type SignupInput = z.infer<typeof signupSchema>;
 

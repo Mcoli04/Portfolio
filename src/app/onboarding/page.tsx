@@ -8,6 +8,7 @@ const STEP_ROUTES: Record<OnboardingStep, string> = {
   parse_cv: "/onboarding/cv",
   review_cv: "/onboarding/review",
   preferences: "/onboarding/preferences",
+  salary: "/onboarding/salary",
   auto_apply_mode: "/onboarding/auto-apply",
   consent: "/onboarding/consent",
   complete: "/discover",

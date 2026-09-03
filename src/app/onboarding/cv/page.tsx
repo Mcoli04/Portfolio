@@ -1,15 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
-import { UploadCloud, FileText, Loader2 } from "lucide-react";
+import { UploadCloud, FileText, Loader2, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+const ALLOWED_EXTENSIONS = [".pdf", ".doc", ".docx"];
+
+function isAllowedFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return ALLOWED_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
 
 export default function UploadCvStep() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+
+  function handleDrop(e: DragEvent<HTMLLabelElement>) {
+    e.preventDefault();
+    setDragActive(false);
+    const dropped = e.dataTransfer.files?.[0];
+    if (!dropped) return;
+    if (!isAllowedFile(dropped)) {
+      toast.error("Please upload a PDF, DOC or DOCX file.");
+      return;
+    }
+    setFile(dropped);
+  }
 
   async function handleUpload() {
     if (!file) return;
@@ -26,7 +47,7 @@ export default function UploadCvStep() {
         toast.error(data.error ?? "Upload failed");
         return;
       }
-      toast.success("CV uploaded and parsed.");
+      toast.success("Got it — we've read your CV.");
       router.push("/onboarding/review");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
@@ -37,26 +58,35 @@ export default function UploadCvStep() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-slate-900">Upload your CV</h1>
-      <p className="mt-1 text-sm text-slate-600">
-        We&apos;ll extract your skills and experience automatically. You&apos;ll get to review and correct everything next.
+      <h1 className="text-2xl font-bold text-slate-900">Let&apos;s start with your CV</h1>
+      <p className="mt-2 text-sm leading-relaxed text-slate-600">
+        Upload your CV and we&apos;ll fill in most of your profile for you.
       </p>
 
       <label
         htmlFor="cv-file"
-        className="mt-6 flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center transition hover:border-brand-300 hover:bg-brand-50/40"
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragActive(true);
+        }}
+        onDragLeave={() => setDragActive(false)}
+        onDrop={handleDrop}
+        className={cn(
+          "mt-6 flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed px-6 py-14 text-center transition",
+          dragActive ? "border-brand-500 bg-brand-50/60" : "border-slate-200 bg-slate-50 hover:border-brand-300 hover:bg-brand-50/40"
+        )}
       >
         {file ? (
           <>
-            <FileText className="h-8 w-8 text-brand-600" />
+            <FileText className="h-9 w-9 text-brand-600" />
             <p className="mt-3 text-sm font-medium text-slate-900">{file.name}</p>
-            <p className="text-xs text-slate-500">{(file.size / 1024 / 1024).toFixed(1)} MB — click to change</p>
+            <p className="text-xs text-slate-500">{(file.size / 1024 / 1024).toFixed(1)} MB — tap to change</p>
           </>
         ) : (
           <>
-            <UploadCloud className="h-8 w-8 text-slate-400" />
-            <p className="mt-3 text-sm font-medium text-slate-700">Click to upload or drag your CV here</p>
-            <p className="text-xs text-slate-400">PDF, DOC or DOCX — up to 8MB</p>
+            <UploadCloud className="h-9 w-9 text-slate-400" />
+            <p className="mt-3 text-base font-semibold text-slate-800">Upload your CV</p>
+            <p className="mt-1 text-xs text-slate-400">Drag and drop, or tap to browse — PDF, DOC or DOCX</p>
           </>
         )}
         <input
@@ -68,10 +98,15 @@ export default function UploadCvStep() {
         />
       </label>
 
-      <Button onClick={handleUpload} disabled={!file || uploading} className="mt-6 w-full">
+      <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-slate-500">
+        <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+        Your CV stays private. Employers only receive it when you choose to apply.
+      </p>
+
+      <Button onClick={handleUpload} disabled={!file || uploading} size="lg" className="mt-6 w-full rounded-full">
         {uploading ? (
           <>
-            <Loader2 className="h-4 w-4 animate-spin" /> Parsing your CV...
+            <Loader2 className="h-4 w-4 animate-spin" /> Reading your CV...
           </>
         ) : (
           "Continue"

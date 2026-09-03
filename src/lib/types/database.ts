@@ -11,6 +11,7 @@ export type OnboardingStep =
   | "parse_cv"
   | "review_cv"
   | "preferences"
+  | "salary"
   | "auto_apply_mode"
   | "consent"
   | "complete";

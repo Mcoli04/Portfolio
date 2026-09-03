@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { TagInput } from "@/components/ui/tag-input";
+import { cn } from "@/lib/utils";
 import type { ParsedCvData } from "@/lib/types/database";
 
 interface FormState {
@@ -14,11 +16,11 @@ interface FormState {
   phone: string;
   location: string;
   yearsExperience: string;
-  skills: string;
-  jobTitles: string;
-  employers: string;
-  languages: string;
-  industries: string;
+  jobTitles: string[];
+  employers: string[];
+  industries: string[];
+  skills: string[];
+  languages: string[];
 }
 
 const EMPTY_FORM: FormState = {
@@ -27,29 +29,18 @@ const EMPTY_FORM: FormState = {
   phone: "",
   location: "",
   yearsExperience: "",
-  skills: "",
-  jobTitles: "",
-  employers: "",
-  languages: "",
-  industries: "",
+  jobTitles: [],
+  employers: [],
+  industries: [],
+  skills: [],
+  languages: [],
 };
-
-function toCsv(values: string[] | undefined): string {
-  return (values ?? []).join(", ");
-}
-
-function fromCsv(value: string): string[] {
-  return value
-    .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
 
 export default function ReviewCvStep() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [hadWarnings, setHadWarnings] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
   useEffect(() => {
@@ -75,7 +66,7 @@ export default function ReviewCvStep() {
           .eq("id", resume.latest_version_id)
           .single();
         parsed = version?.parsed_data ?? null;
-        setWarnings(parsed?.warnings ?? []);
+        setHadWarnings((parsed?.warnings?.length ?? 0) > 0);
       }
 
       setForm({
@@ -84,18 +75,18 @@ export default function ReviewCvStep() {
         phone: parsed?.phone ?? profile?.phone ?? "",
         location: parsed?.location ?? profile?.location ?? "",
         yearsExperience: String(parsed?.yearsExperience ?? profile?.years_experience ?? ""),
-        skills: toCsv(parsed?.skills ?? profile?.skills),
-        jobTitles: toCsv(parsed?.jobTitles ?? profile?.job_titles),
-        employers: toCsv(parsed?.employers ?? profile?.employers),
-        languages: toCsv(parsed?.languages ?? profile?.languages),
-        industries: toCsv(parsed?.industries ?? profile?.industries),
+        jobTitles: parsed?.jobTitles ?? profile?.job_titles ?? [],
+        employers: parsed?.employers ?? profile?.employers ?? [],
+        industries: parsed?.industries ?? profile?.industries ?? [],
+        skills: parsed?.skills ?? profile?.skills ?? [],
+        languages: parsed?.languages ?? profile?.languages ?? [],
       });
       setLoading(false);
     }
     load();
   }, []);
 
-  function update<K extends keyof FormState>(key: K, value: string) {
+  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -115,11 +106,11 @@ export default function ReviewCvStep() {
           phone: form.phone || null,
           location: form.location || null,
           years_experience: form.yearsExperience ? Number(form.yearsExperience) : null,
-          skills: fromCsv(form.skills),
-          job_titles: fromCsv(form.jobTitles),
-          employers: fromCsv(form.employers),
-          languages: fromCsv(form.languages),
-          industries: fromCsv(form.industries),
+          skills: form.skills,
+          job_titles: form.jobTitles,
+          employers: form.employers,
+          industries: form.industries,
+          languages: form.languages,
           onboarding_step: "preferences",
         })
         .eq("id", user.id);
@@ -144,38 +135,62 @@ export default function ReviewCvStep() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-slate-900">Review your details</h1>
-      <p className="mt-1 text-sm text-slate-600">
-        Here&apos;s what we found in your CV. Please correct anything that&apos;s wrong — we never guess beyond what you confirm here.
-      </p>
+      <h1 className="text-2xl font-bold text-slate-900">Here&apos;s your profile</h1>
 
-      {warnings.length > 0 && (
-        <div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">
-          {warnings.map((w, i) => (
-            <p key={i}>{w}</p>
-          ))}
+      {hadWarnings && (
+        <div className="mt-3 flex items-start gap-2 rounded-2xl bg-brand-50 p-3 text-xs leading-relaxed text-brand-800">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />
+          We&apos;ve filled this in from your CV. Give it a quick check before continuing.
         </div>
       )}
+      {!hadWarnings && (
+        <p className="mt-2 text-sm text-slate-600">
+          We&apos;ve filled this in from your CV — check it over and fix anything that&apos;s not quite right.
+        </p>
+      )}
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        <Field label="Full name" value={form.fullName} onChange={(v) => update("fullName", v)} />
-        <Field label="Email" value={form.email} onChange={(v) => update("email", v)} type="email" />
-        <Field label="Phone" value={form.phone} onChange={(v) => update("phone", v)} />
-        <Field label="Location" value={form.location} onChange={(v) => update("location", v)} />
-        <Field label="Years of experience" value={form.yearsExperience} onChange={(v) => update("yearsExperience", v)} type="number" />
-      </div>
+      <Section title="About you">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Full name" value={form.fullName} onChange={(v) => update("fullName", v)} needsAttention={!form.fullName} />
+          <Field label="Email" value={form.email} onChange={(v) => update("email", v)} type="email" />
+          <Field label="Phone" value={form.phone} onChange={(v) => update("phone", v)} needsAttention={!form.phone} />
+          <Field label="Location" value={form.location} onChange={(v) => update("location", v)} needsAttention={!form.location} />
+        </div>
+      </Section>
 
-      <div className="mt-4 space-y-4">
-        <Field label="Skills (comma separated)" value={form.skills} onChange={(v) => update("skills", v)} textarea />
-        <Field label="Job titles held (comma separated)" value={form.jobTitles} onChange={(v) => update("jobTitles", v)} />
-        <Field label="Employers (comma separated)" value={form.employers} onChange={(v) => update("employers", v)} />
-        <Field label="Languages (comma separated)" value={form.languages} onChange={(v) => update("languages", v)} />
-        <Field label="Industries (comma separated)" value={form.industries} onChange={(v) => update("industries", v)} />
-      </div>
+      <Section title="Your experience">
+        <Field
+          label="Years of experience"
+          value={form.yearsExperience}
+          onChange={(v) => update("yearsExperience", v)}
+          type="number"
+          needsAttention={!form.yearsExperience}
+        />
+        <TagField label="Job titles you've held" value={form.jobTitles} onChange={(v) => update("jobTitles", v)} placeholder="e.g. Sales Assistant" />
+        <TagField label="Employers" value={form.employers} onChange={(v) => update("employers", v)} placeholder="e.g. Malta Retail Group" />
+        <TagField label="Industries" value={form.industries} onChange={(v) => update("industries", v)} placeholder="e.g. Retail, Hospitality" />
+      </Section>
 
-      <Button onClick={handleSave} disabled={saving} className="mt-8 w-full">
+      <Section title="Skills">
+        <TagField label="Skills" value={form.skills} onChange={(v) => update("skills", v)} placeholder="e.g. Customer Service, Excel" hideLabel />
+      </Section>
+
+      <Section title="Languages">
+        <TagField label="Languages" value={form.languages} onChange={(v) => update("languages", v)} placeholder="e.g. Maltese, English" hideLabel />
+      </Section>
+
+      <Button onClick={handleSave} disabled={saving} size="lg" className="mt-8 w-full rounded-full">
         {saving ? "Saving..." : "Continue"}
       </Button>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-6 border-t border-slate-100 pt-6 first:mt-6 first:border-t-0 first:pt-0">
+      <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+      <div className="mt-3 space-y-4">{children}</div>
     </div>
   );
 }
@@ -185,32 +200,49 @@ function Field({
   value,
   onChange,
   type = "text",
-  textarea = false,
+  needsAttention = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   type?: string;
-  textarea?: boolean;
+  needsAttention?: boolean;
 }) {
   return (
     <div>
       <label className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label>
-      {textarea ? (
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          rows={3}
-          className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
-        />
-      ) : (
-        <input
-          type={type}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
-        />
-      )}
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          "w-full rounded-2xl border px-4 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500",
+          needsAttention ? "border-amber-300 bg-amber-50/40" : "border-slate-300"
+        )}
+      />
+      {needsAttention && <p className="mt-1 text-xs text-amber-600">We couldn&apos;t find this — add it if you&apos;d like.</p>}
+    </div>
+  );
+}
+
+function TagField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  hideLabel = false,
+}: {
+  label: string;
+  value: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+  hideLabel?: boolean;
+}) {
+  return (
+    <div>
+      {!hideLabel && <label className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label>}
+      <TagInput value={value} onChange={onChange} placeholder={placeholder} />
+      {value.length === 0 && <p className="mt-1 text-xs text-amber-600">We couldn&apos;t find any — add a few if you&apos;d like.</p>}
     </div>
   );
 }
