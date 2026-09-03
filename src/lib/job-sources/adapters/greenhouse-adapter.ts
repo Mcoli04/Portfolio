@@ -1,5 +1,6 @@
 import { integrationConfig } from "@/lib/config";
 import { normalizeText } from "@/lib/dedupe";
+import { htmlToPlainText } from "@/lib/html-to-text";
 import { MALTA_LOCALITIES } from "@/lib/malta-locations";
 import { BaseJobSourceAdapter } from "../base";
 import type { NormalizedJob, RawSourceJob } from "../types";
@@ -135,7 +136,11 @@ export class GreenhouseAdapter extends BaseJobSourceAdapter {
       sourceJobId: String(raw.id),
       title: String(raw.title ?? "Untitled role"),
       companyName: String((raw.company_name as string) ?? "Unknown employer"),
-      description: String(raw.content ?? ""),
+      // raw.content is the employer's rich-text HTML description (present
+      // because fetchJobsLive requests ?content=true) — normalize it to
+      // plain text here so nothing downstream ever stores or displays raw
+      // markup/entities.
+      description: htmlToPlainText(String(raw.content ?? "")),
       skills: [],
       location: location || "Malta",
       locality: locality ?? undefined,
