@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/lib/**/*.test.ts",
     "worker:ingest": "tsx --require ./scripts/load-worker-env.cjs src/workers/job-ingest-worker.ts",
     "worker:apply": "tsx --require ./scripts/load-worker-env.cjs src/workers/application-worker.ts"
   },
