@@ -9,7 +9,7 @@ import { emailSchema, firstNameSchema, passwordSchema } from "@/lib/validation/a
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { PasswordField } from "@/components/ui/password-field";
-import { ProgressIndicator } from "@/components/onboarding/progress-indicator";
+import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 
 type Step = "welcome" | "name" | "email" | "password" | "verify";
 
@@ -171,11 +171,13 @@ export default function SignupPage() {
           <ChevronLeft className="h-5 w-5" />
         </button>
       </div>
-      <ProgressIndicator step={stepIndex + 1} total={STEP_ORDER.length} className="mb-6" />
+      <div className="mb-6">
+        <OnboardingProgress phaseIndex={stepIndex} progress={1} phases={["Name", "Email", "Password"]} />
+      </div>
 
       {step === "name" && (
         <form onSubmit={handleNameSubmit}>
-          <h1 className="text-2xl font-bold text-slate-900">First, what should we call you?</h1>
+          <h1 className="text-center text-2xl font-bold text-slate-900">First, what should we call you?</h1>
           <div className="mt-6">
             <label htmlFor="firstName" className="mb-1.5 block text-sm font-medium text-slate-700">
               First name
@@ -198,7 +200,7 @@ export default function SignupPage() {
 
       {step === "email" && (
         <form onSubmit={handleEmailSubmit}>
-          <h1 className="text-2xl font-bold text-slate-900">Where should we send job updates?</h1>
+          <h1 className="text-center text-2xl font-bold text-slate-900">Where should we send job updates?</h1>
           <div className="mt-6">
             <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-slate-700">
               Email
@@ -224,7 +226,7 @@ export default function SignupPage() {
 
       {step === "password" && (
         <form onSubmit={handlePasswordSubmit}>
-          <h1 className="text-2xl font-bold text-slate-900">Create your password</h1>
+          <h1 className="text-center text-2xl font-bold text-slate-900">Create your password</h1>
           <div className="mt-6">
             <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-slate-700">
               Password

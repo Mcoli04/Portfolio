@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
+import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
+import { OnboardingContinueButton } from "@/components/onboarding/onboarding-continue-button";
 import { parseSalaryField, validateSalaryRange } from "@/lib/validation/preferences";
 
 export default function SalaryStep() {
@@ -55,26 +56,28 @@ export default function SalaryStep() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900">What salary are you aiming for?</h1>
-      <p className="mt-2 text-sm text-slate-600">Optional — you can skip this if you&apos;re flexible.</p>
+      <OnboardingProgress phaseIndex={2} progress={1} />
 
-      <div className="mt-6 grid grid-cols-2 gap-3">
-        <SalaryInput label="Minimum yearly salary" value={salaryMin} onChange={setSalaryMin} autoFocus />
-        <SalaryInput label="Maximum yearly salary" value={salaryMax} onChange={setSalaryMax} />
+      <div className="mt-8">
+        <h1 className="text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl">
+          What salary are you aiming for?
+        </h1>
+        <p className="mt-2 text-center text-sm text-slate-500">Optional — you can skip this if you&apos;re flexible.</p>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <SalaryInput label="Minimum yearly salary" value={salaryMin} onChange={setSalaryMin} autoFocus />
+          <SalaryInput label="Maximum yearly salary" value={salaryMax} onChange={setSalaryMax} />
+        </div>
+        {salaryError && <p className="mt-2 text-center text-xs text-red-600">{salaryError}</p>}
+
+        <div className="mt-4 text-center">
+          <button type="button" onClick={handleSkip} className="text-sm font-medium text-brand-600 hover:underline">
+            I&apos;d rather not say
+          </button>
+        </div>
+
+        <OnboardingContinueButton onClick={handleContinue} disabled={!!salaryError} loading={saving} />
       </div>
-      {salaryError && <p className="mt-2 text-xs text-red-600">{salaryError}</p>}
-
-      <button
-        type="button"
-        onClick={handleSkip}
-        className="mt-4 text-sm font-medium text-brand-600 hover:underline"
-      >
-        I&apos;d rather not say
-      </button>
-
-      <Button onClick={handleContinue} disabled={saving || !!salaryError} size="lg" className="mt-6 w-full rounded-full">
-        {saving ? "Saving..." : "Continue"}
-      </Button>
     </div>
   );
 }

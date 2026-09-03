@@ -10,6 +10,7 @@ export type OnboardingStep =
   | "upload_cv"
   | "parse_cv"
   | "review_cv"
+  | "goals"
   | "preferences"
   | "salary"
   | "auto_apply_mode"
@@ -21,6 +22,18 @@ export type AutoApplyMode = "auto" | "hybrid" | "review";
 export type WorkType = "remote" | "hybrid" | "onsite";
 export type EmploymentType = "full_time" | "part_time" | "contract" | "temporary" | "internship";
 export type ExperienceLevel = "internship" | "entry" | "junior" | "mid" | "senior" | "lead" | "executive";
+
+export type WorkSituation = "employed" | "self_employed" | "unemployed" | "student";
+export type MoveTimeline = "asap" | "within_1_3_months" | "within_3_6_months" | "exploring";
+export type CareerGoal =
+  | "better_salary"
+  | "career_progression"
+  | "better_work_life_balance"
+  | "more_flexibility"
+  | "role_in_field"
+  | "career_change"
+  | "first_job";
+export type RemoteScope = "malta_only" | "eu_eea" | "europe" | "worldwide";
 
 export type ApplicationMethod = "api" | "ats" | "browser_automation" | "email" | "internal" | "manual";
 
@@ -94,6 +107,9 @@ export interface Profile {
   auto_apply_mode: AutoApplyMode;
   auto_apply_authorized: boolean;
   auto_apply_authorized_at: string | null;
+  work_situation: WorkSituation | null;
+  move_timeline: MoveTimeline | null;
+  career_goals: CareerGoal[];
   created_at: string;
   updated_at: string;
 }
@@ -130,6 +146,7 @@ export interface JobPreferences {
   custom_titles: string[];
   locations: string[];
   work_types: string[];
+  remote_scope: RemoteScope | null;
   employment_types: EmploymentType[];
   experience_levels: ExperienceLevel[];
   salary_min: number | null;

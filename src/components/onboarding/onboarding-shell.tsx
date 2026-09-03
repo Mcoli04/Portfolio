@@ -1,36 +1,25 @@
 import Link from "next/link";
-import { ProgressIndicator } from "./progress-indicator";
 
 /**
- * Shared visual shell for every onboarding screen: brand mark, progress
- * indicator, and a single centered rounded card holding one step's content.
- * Used by src/app/onboarding/layout.tsx so every step looks and feels the
- * same without each page rebuilding the chrome around it.
+ * Shared outer chrome for every onboarding screen: brand mark plus a narrow
+ * centered column. Deliberately has no card border and no progress bar of
+ * its own — each page renders its own <OnboardingProgress> so it can show
+ * live progress through that page's own questions, and content sits
+ * directly on the page instead of inside a big bordered card.
  */
-export function OnboardingShell({
-  step,
-  total,
-  progressLabel,
-  children,
-}: {
-  step: number;
-  total: number;
-  progressLabel?: string;
-  children: React.ReactNode;
-}) {
+export function OnboardingShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-brand-50 via-white to-white px-4 py-8 sm:py-12">
-      <div className="mx-auto w-full max-w-lg">
+    <main className="flex min-h-screen flex-col bg-gradient-to-b from-brand-50 via-white to-white">
+      <div className="mx-auto w-full max-w-md px-5 pb-4 pt-6">
         <Link
           href="/"
-          className="mb-6 flex items-center justify-center gap-2 text-lg font-bold tracking-tight text-slate-900"
+          className="flex items-center justify-center gap-2 text-sm font-bold tracking-tight text-slate-900"
         >
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white">S</span>
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-600 text-xs text-white">S</span>
           Sqwer
         </Link>
-        <ProgressIndicator step={step} total={total} label={progressLabel} className="mb-6" />
-        <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-card sm:p-8">{children}</div>
       </div>
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-12">{children}</div>
     </main>
   );
 }

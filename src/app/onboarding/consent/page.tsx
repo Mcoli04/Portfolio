@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Briefcase, Loader2, MapPin, Sliders, Euro, PartyPopper } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
+import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
+import { OnboardingContinueButton } from "@/components/onboarding/onboarding-continue-button";
 import { isAllMaltaLocations } from "@/lib/malta-locations";
 
 interface SummaryData {
@@ -110,11 +111,15 @@ export default function ConsentStep() {
 
   return (
     <div>
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
-        <PartyPopper className="h-6 w-6" />
+      <OnboardingProgress phaseIndex={4} progress={1} />
+
+      <div className="mt-8 flex justify-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+          <PartyPopper className="h-6 w-6" />
+        </div>
       </div>
-      <h1 className="mt-4 text-2xl font-bold text-slate-900">You&apos;re ready</h1>
-      <p className="mt-1.5 text-sm text-slate-600">Here&apos;s what we&apos;ll use to find your matches.</p>
+      <h1 className="mt-4 text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl">You&apos;re ready</h1>
+      <p className="mt-1.5 text-center text-sm text-slate-500">Here&apos;s what we&apos;ll use to find your matches.</p>
 
       <div className="mt-5 space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
         <SummaryRow icon={Briefcase} label="Jobs" value={summary.jobTitles.length ? summary.jobTitles.join(", ") : "Open to anything"} />
@@ -140,9 +145,13 @@ export default function ConsentStep() {
         </span>
       </label>
 
-      <Button onClick={handleFinish} disabled={!agreed || saving} size="lg" className="mt-6 w-full rounded-full">
-        {saving ? "Finishing setup..." : "Show me my jobs"}
-      </Button>
+      <OnboardingContinueButton
+        onClick={handleFinish}
+        disabled={!agreed}
+        loading={saving}
+        label="Show me my jobs"
+        loadingLabel="Finishing setup..."
+      />
 
       <p className="mt-4 text-center text-xs text-slate-400">
         Your profile is private. Employers only receive your details when you apply.

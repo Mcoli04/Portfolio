@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
 import { TagInput } from "@/components/ui/tag-input";
+import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
+import { OnboardingContinueButton } from "@/components/onboarding/onboarding-continue-button";
 import { cn } from "@/lib/utils";
 import type { ParsedCvData } from "@/lib/types/database";
 
@@ -111,7 +112,7 @@ export default function ReviewCvStep() {
           employers: form.employers,
           industries: form.industries,
           languages: form.languages,
-          onboarding_step: "preferences",
+          onboarding_step: "goals",
         })
         .eq("id", user.id);
 
@@ -119,7 +120,7 @@ export default function ReviewCvStep() {
         toast.error(error.message);
         return;
       }
-      router.push("/onboarding/preferences");
+      router.push("/onboarding/goals");
     } finally {
       setSaving(false);
     }
@@ -135,16 +136,20 @@ export default function ReviewCvStep() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900">Here&apos;s your profile</h1>
+      <OnboardingProgress phaseIndex={0} progress={1} />
+
+      <h1 className="mt-8 text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl">
+        Here&apos;s your profile
+      </h1>
 
       {hadWarnings && (
-        <div className="mt-3 flex items-start gap-2 rounded-2xl bg-brand-50 p-3 text-xs leading-relaxed text-brand-800">
+        <div className="mx-auto mt-3 flex max-w-sm items-start gap-2 rounded-2xl bg-brand-50 p-3 text-xs leading-relaxed text-brand-800">
           <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />
           We&apos;ve filled this in from your CV. Give it a quick check before continuing.
         </div>
       )}
       {!hadWarnings && (
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="mt-2 text-center text-sm text-slate-500">
           We&apos;ve filled this in from your CV — check it over and fix anything that&apos;s not quite right.
         </p>
       )}
@@ -179,9 +184,7 @@ export default function ReviewCvStep() {
         <TagField label="Languages" value={form.languages} onChange={(v) => update("languages", v)} placeholder="e.g. Maltese, English" hideLabel />
       </Section>
 
-      <Button onClick={handleSave} disabled={saving} size="lg" className="mt-8 w-full rounded-full">
-        {saving ? "Saving..." : "Continue"}
-      </Button>
+      <OnboardingContinueButton onClick={handleSave} loading={saving} />
     </div>
   );
 }

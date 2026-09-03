@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Building2, Home, Shuffle, Sparkles } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { ChipGroup } from "@/components/ui/chip-select";
-import { OptionCard } from "@/components/ui/option-card";
 import { TagInput } from "@/components/ui/tag-input";
+import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
+import { SingleChoiceQuestion } from "@/components/onboarding/single-choice-question";
+import { MultiChoiceQuestion } from "@/components/onboarding/multi-choice-question";
+import { OnboardingContinueButton } from "@/components/onboarding/onboarding-continue-button";
 import {
   MALTA_LOCALITIES,
   isAllMaltaLocations,
@@ -18,7 +19,7 @@ import {
   toggleMaltaLocality,
 } from "@/lib/malta-locations";
 import { cn } from "@/lib/utils";
-import type { EmploymentType, ExperienceLevel, WorkType } from "@/lib/types/database";
+import type { EmploymentType, ExperienceLevel, RemoteScope, WorkType } from "@/lib/types/database";
 
 const JOB_TITLE_SUGGESTIONS = [
   "Accountant",
@@ -35,11 +36,18 @@ const JOB_TITLE_SUGGESTIONS = [
   "Chef",
 ];
 
-const WORK_PREFERENCES: { value: WorkType | "any"; title: string; icon: typeof Home }[] = [
-  { value: "onsite", title: "On-site", icon: Building2 },
-  { value: "hybrid", title: "Hybrid", icon: Shuffle },
-  { value: "remote", title: "Remote", icon: Home },
-  { value: "any", title: "I'm flexible", icon: Sparkles },
+const WORK_TYPES: { value: WorkType | "any"; label: string }[] = [
+  { value: "onsite", label: "On-site" },
+  { value: "hybrid", label: "Hybrid" },
+  { value: "remote", label: "Remote" },
+  { value: "any", label: "I'm flexible" },
+];
+
+const REMOTE_SCOPES: { value: RemoteScope; label: string }[] = [
+  { value: "malta_only", label: "Malta only" },
+  { value: "eu_eea", label: "EU / EEA" },
+  { value: "europe", label: "Europe" },
+  { value: "worldwide", label: "Worldwide" },
 ];
 
 const EMPLOYMENT_TYPES: { value: EmploymentType; label: string }[] = [
@@ -51,7 +59,6 @@ const EMPLOYMENT_TYPES: { value: EmploymentType; label: string }[] = [
 ];
 
 const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string }[] = [
-  { value: "internship", label: "Internship" },
   { value: "entry", label: "Just starting out" },
   { value: "junior", label: "Junior" },
   { value: "mid", label: "Mid-level" },
@@ -60,19 +67,29 @@ const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string }[] = [
   { value: "executive", label: "Executive" },
 ];
 
-function toggle<T>(list: T[], value: T): T[] {
-  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+type StepKey = "jobTitle" | "locations" | "workType" | "remoteScope" | "employmentType" | "experienceLevel";
+
+function getSteps(workType: WorkType | "any" | null): StepKey[] {
+  const steps: StepKey[] = ["jobTitle", "locations", "workType"];
+  if (workType === "remote") steps.push("remoteScope");
+  steps.push("employmentType", "experienceLevel");
+  return steps;
 }
 
 export default function PreferencesStep() {
   const router = useRouter();
-  const [saving, setSaving] = useState(false);
+  const [currentStep, setCurrentStep] = useState<StepKey>("jobTitle");
   const [jobTitles, setJobTitles] = useState<string[]>([]);
   // New users start matched against every locality in Malta.
   const [locations, setLocations] = useState<string[]>(selectAllMaltaLocations());
-  const [workType, setWorkType] = useState<WorkType | "any">("any");
+  const [workType, setWorkType] = useState<WorkType | "any" | null>(null);
+  const [remoteScope, setRemoteScope] = useState<RemoteScope | null>(null);
   const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
-  const [experienceLevels, setExperienceLevels] = useState<ExperienceLevel[]>([]);
+  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const steps = getSteps(workType);
+  const stepIndex = steps.indexOf(currentStep);
 
   useEffect(() => {
     async function prefillFromProfile() {
@@ -87,7 +104,22 @@ export default function PreferencesStep() {
     prefillFromProfile();
   }, []);
 
-  async function handleSave() {
+  function goNext(fromWorkType?: WorkType | "any" | null) {
+    const activeSteps = getSteps(fromWorkType !== undefined ? fromWorkType : workType);
+    const idx = activeSteps.indexOf(currentStep);
+    if (idx === -1 || idx === activeSteps.length - 1) {
+      handleFinish(fromWorkType !== undefined ? fromWorkType : workType);
+      return;
+    }
+    setCurrentStep(activeSteps[idx + 1]);
+  }
+
+  function goBack() {
+    const idx = steps.indexOf(currentStep);
+    if (idx > 0) setCurrentStep(steps[idx - 1]);
+  }
+
+  async function handleFinish(finalWorkType: WorkType | "any" | null = workType) {
     setSaving(true);
     try {
       const supabase = createClient();
@@ -102,9 +134,10 @@ export default function PreferencesStep() {
           job_titles: jobTitles,
           custom_titles: [],
           locations,
-          work_types: workType === "any" ? ["any"] : [workType],
+          work_types: finalWorkType === "any" || !finalWorkType ? ["any"] : [finalWorkType],
+          remote_scope: finalWorkType === "remote" ? remoteScope : null,
           employment_types: employmentTypes,
-          experience_levels: experienceLevels,
+          experience_levels: experienceLevel ? [experienceLevel] : [],
         },
         { onConflict: "user_id" }
       );
@@ -122,88 +155,131 @@ export default function PreferencesStep() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900">What kind of job would you like next?</h1>
-      <p className="mt-2 text-sm text-slate-600">This helps us bring the right roles to the top for you.</p>
+      <OnboardingProgress phaseIndex={2} progress={stepIndex / steps.length} />
 
-      <div className="mt-6 space-y-7">
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Job title</label>
-          <TagInput
-            value={jobTitles}
-            onChange={setJobTitles}
-            suggestions={JOB_TITLE_SUGGESTIONS}
-            placeholder="e.g. Accountant, Sales Assistant"
-          />
-        </div>
+      {stepIndex > 0 && (
+        <button
+          type="button"
+          onClick={goBack}
+          aria-label="Go back"
+          className="mt-4 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+      )}
 
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Where in Malta?</label>
-          <button
-            type="button"
-            onClick={() => setLocations((prev) => toggleAllMaltaLocations(prev))}
-            aria-pressed={isAllMaltaLocations(locations)}
-            className={cn(
-              "flex w-full items-center justify-between rounded-2xl border-2 px-4 py-3 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2",
-              isAllMaltaLocations(locations)
-                ? "border-brand-600 bg-brand-50/60 text-brand-700"
-                : "border-slate-200 text-slate-700 hover:border-brand-300"
-            )}
-          >
-            Anywhere in Malta
-          </button>
-          <div className="mt-3 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-2xl border border-slate-200 p-3">
-            {MALTA_LOCALITIES.map((locality) => (
+      <div className={stepIndex > 0 ? "mt-4" : "mt-8"}>
+        {currentStep === "jobTitle" && (
+          <div>
+            <h1 className="text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl">
+              What kind of job would you like next?
+            </h1>
+            <p className="mt-2 text-center text-sm text-slate-500">Add one or more job titles.</p>
+            <div className="mt-6">
+              <TagInput value={jobTitles} onChange={setJobTitles} suggestions={JOB_TITLE_SUGGESTIONS} placeholder="e.g. Accountant, Sales Assistant" />
+            </div>
+            <OnboardingContinueButton onClick={() => goNext()} />
+          </div>
+        )}
+
+        {currentStep === "locations" && (
+          <div>
+            <h1 className="text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl">
+              Where would you like to work?
+            </h1>
+            <p className="mt-2 text-center text-sm text-slate-500">Pick specific localities, or stay open to all of Malta.</p>
+
+            <div className="mt-6">
               <button
-                key={locality}
                 type="button"
-                onClick={() => setLocations((prev) => toggleMaltaLocality(prev, locality))}
-                aria-pressed={isMaltaLocalitySelected(locations, locality)}
+                onClick={() => setLocations((prev) => toggleAllMaltaLocations(prev))}
+                aria-pressed={isAllMaltaLocations(locations)}
                 className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500",
-                  isMaltaLocalitySelected(locations, locality)
-                    ? "border-brand-600 bg-brand-600 text-white"
-                    : "border-slate-200 text-slate-600 hover:border-brand-300"
+                  "flex w-full items-center justify-between rounded-2xl border-2 px-4 py-3 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2",
+                  isAllMaltaLocations(locations)
+                    ? "border-brand-600 bg-brand-50/60 text-brand-700"
+                    : "border-slate-200 text-slate-700 hover:border-brand-300"
                 )}
               >
-                {locality}
+                Anywhere in Malta
               </button>
-            ))}
+              <div className="mt-3 flex max-h-48 flex-wrap gap-1.5 overflow-y-auto rounded-2xl border border-slate-200 p-3">
+                {MALTA_LOCALITIES.map((locality) => (
+                  <button
+                    key={locality}
+                    type="button"
+                    onClick={() => setLocations((prev) => toggleMaltaLocality(prev, locality))}
+                    aria-pressed={isMaltaLocalitySelected(locations, locality)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500",
+                      isMaltaLocalitySelected(locations, locality)
+                        ? "border-brand-600 bg-brand-600 text-white"
+                        : "border-slate-200 text-slate-600 hover:border-brand-300"
+                    )}
+                  >
+                    {locality}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <OnboardingContinueButton onClick={() => goNext()} />
           </div>
-          <p className="mt-1.5 text-xs text-slate-400">
-            Pick specific localities to narrow things down — that switches off Anywhere in Malta. Tap Anywhere in
-            Malta again any time to match everywhere.
-          </p>
-        </div>
+        )}
 
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Work preference</label>
-          <div className="grid grid-cols-2 gap-3">
-            {WORK_PREFERENCES.map((option) => (
-              <OptionCard
-                key={option.value}
-                selected={workType === option.value}
-                onClick={() => setWorkType(option.value)}
-                icon={option.icon}
-                title={option.title}
-              />
-            ))}
-          </div>
-        </div>
+        {currentStep === "workType" && (
+          <SingleChoiceQuestion
+            question="How would you prefer to work?"
+            options={WORK_TYPES}
+            value={workType}
+            onSelect={(v) => {
+              setWorkType(v);
+              setTimeout(() => goNext(v), 300);
+            }}
+          />
+        )}
 
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Employment type</label>
-          <ChipGroup options={EMPLOYMENT_TYPES} value={employmentTypes} onToggle={(v) => setEmploymentTypes((prev) => toggle(prev, v))} />
-        </div>
+        {currentStep === "remoteScope" && (
+          <SingleChoiceQuestion
+            question="Where are you open to working remotely?"
+            helper="This helps us match remote roles that make sense for you."
+            options={REMOTE_SCOPES}
+            value={remoteScope}
+            onSelect={(v) => {
+              setRemoteScope(v);
+              setTimeout(() => goNext(), 300);
+            }}
+          />
+        )}
 
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Experience level</label>
-          <ChipGroup options={EXPERIENCE_LEVELS} value={experienceLevels} onToggle={(v) => setExperienceLevels((prev) => toggle(prev, v))} />
-        </div>
+        {currentStep === "employmentType" && (
+          <>
+            <MultiChoiceQuestion
+              question="What type of work are you open to?"
+              helper="Pick as many as apply."
+              options={EMPLOYMENT_TYPES}
+              value={employmentTypes}
+              onToggle={(v) => setEmploymentTypes((prev) => (prev.includes(v) ? prev.filter((t) => t !== v) : [...prev, v]))}
+            />
+            <OnboardingContinueButton onClick={() => goNext()} disabled={employmentTypes.length === 0} />
+          </>
+        )}
+
+        {currentStep === "experienceLevel" && (
+          <SingleChoiceQuestion
+            question="What level best describes you?"
+            options={EXPERIENCE_LEVELS}
+            value={experienceLevel}
+            onSelect={(v) => {
+              setExperienceLevel(v);
+              setTimeout(() => handleFinish(), 300);
+            }}
+          />
+        )}
+
+        {saving && currentStep === "experienceLevel" && (
+          <p className="mt-4 text-center text-xs text-slate-400">Saving your preferences...</p>
+        )}
       </div>
-
-      <Button onClick={handleSave} disabled={saving} size="lg" className="mt-8 w-full rounded-full">
-        {saving ? "Saving..." : "Continue"}
-      </Button>
     </div>
   );
 }
