@@ -7,6 +7,8 @@ import { Briefcase, Loader2, MapPin, Sliders, Euro, PartyPopper } from "lucide-r
 import { createClient } from "@/lib/supabase/client";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import { OnboardingContinueButton } from "@/components/onboarding/onboarding-continue-button";
+import { OnboardingBackButton } from "@/components/onboarding/onboarding-back-button";
+import { getPreviousPageHref } from "@/lib/onboarding-flow";
 import { isAllMaltaLocations } from "@/lib/malta-locations";
 
 interface SummaryData {
@@ -99,48 +101,49 @@ export default function ConsentStep() {
     }
   }
 
-  if (loading || !summary) {
-    return (
-      <div className="flex items-center justify-center py-16 text-slate-400">
-        <Loader2 className="h-6 w-6 animate-spin" />
-      </div>
-    );
-  }
-
-  const salaryText = formatSalary(summary.salaryMin, summary.salaryMax, summary.salaryCurrency);
+  const salaryText = summary ? formatSalary(summary.salaryMin, summary.salaryMax, summary.salaryCurrency) : null;
 
   return (
     <div>
       <OnboardingProgress phaseIndex={4} progress={1} />
+      <div className="mt-4">
+        <OnboardingBackButton href={getPreviousPageHref("consent") ?? undefined} />
+      </div>
 
-      <div className="mt-8 flex justify-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
-          <PartyPopper className="h-6 w-6" />
+      {loading || !summary ? (
+        <div className="flex items-center justify-center py-16 text-slate-400">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+      ) : (
+      <div className="mt-4 lg:mt-6">
+      <div className="flex justify-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 lg:h-14 lg:w-14">
+          <PartyPopper className="h-6 w-6 lg:h-7 lg:w-7" />
         </div>
       </div>
-      <h1 className="mt-4 text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl">You&apos;re ready</h1>
-      <p className="mt-1.5 text-center text-sm text-slate-500">Here&apos;s what we&apos;ll use to find your matches.</p>
+      <h1 className="mt-4 text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl lg:text-3xl">You&apos;re ready</h1>
+      <p className="mt-1.5 text-center text-sm text-slate-500 lg:text-base">Here&apos;s what we&apos;ll use to find your matches.</p>
 
-      <div className="mt-5 space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+      <div className="mt-5 space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 lg:mt-8 lg:rounded-3xl lg:p-6">
         <SummaryRow icon={Briefcase} label="Jobs" value={summary.jobTitles.length ? summary.jobTitles.join(", ") : "Open to anything"} />
         <SummaryRow icon={MapPin} label="Locations" value={formatLocations(summary.locations)} />
         <SummaryRow icon={Sliders} label="Work style" value={summary.workTypes.map((w) => WORK_TYPE_LABELS[w] ?? w).join(", ")} />
         {salaryText && <SummaryRow icon={Euro} label="Salary" value={salaryText} />}
       </div>
 
-      <p className="mt-5 text-sm leading-relaxed text-slate-600">
+      <p className="mt-5 text-sm leading-relaxed text-slate-600 lg:text-base">
         When you swipe right on a job, Sqwer may use the information you&apos;ve provided to prepare and submit that
         application. We&apos;ll never invent qualifications or experience for you.
       </p>
 
-      <label className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-200 p-4">
+      <label className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-200 p-4 lg:rounded-3xl">
         <input
           type="checkbox"
           checked={agreed}
           onChange={(e) => setAgreed(e.target.checked)}
           className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
         />
-        <span className="text-sm text-slate-700">
+        <span className="text-sm text-slate-700 lg:text-base">
           I understand and want Sqwer to help me apply to jobs I approve.
         </span>
       </label>
@@ -156,6 +159,8 @@ export default function ConsentStep() {
       <p className="mt-4 text-center text-xs text-slate-400">
         Your profile is private. Employers only receive your details when you apply.
       </p>
+      </div>
+      )}
     </div>
   );
 }

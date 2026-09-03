@@ -18,7 +18,7 @@ export function OnboardingContinueButton({
   loadingLabel?: string;
 }) {
   return (
-    <Button onClick={onClick} disabled={disabled || loading} size="lg" className="mt-8 w-full rounded-full">
+    <Button onClick={onClick} disabled={disabled || loading} size="lg" className="mt-8 w-full rounded-full lg:mt-10">
       {loading ? (
         <>
           <Loader2 className="h-4 w-4 animate-spin" /> {loadingLabel}

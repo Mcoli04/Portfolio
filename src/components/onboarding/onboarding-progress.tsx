@@ -24,12 +24,12 @@ export function OnboardingProgress({
 
   return (
     <div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 lg:gap-2">
         {phases.map((label, i) => {
           const completed = i < phaseIndex;
           const current = i === phaseIndex;
           return (
-            <div key={label} className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+            <div key={label} className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100 lg:h-2">
               <div
                 className="h-full rounded-full bg-brand-600 transition-[width] duration-300 ease-out"
                 style={{ width: completed ? "100%" : current ? `${clampedProgress * 100}%` : "0%" }}
@@ -38,16 +38,16 @@ export function OnboardingProgress({
           );
         })}
       </div>
-      <div className="mt-1.5 flex items-start justify-between">
+      <div className="mt-1.5 flex items-start justify-between lg:mt-2">
         {phases.map((label, i) => {
           const completed = i < phaseIndex;
           const current = i === phaseIndex;
           return (
             <div key={label} className="flex flex-1 flex-col items-center gap-0.5">
-              {completed && <Check className="h-2.5 w-2.5 text-brand-600" strokeWidth={3} />}
+              {completed && <Check className="h-2.5 w-2.5 text-brand-600 lg:h-3 lg:w-3" strokeWidth={3} />}
               <span
                 className={cn(
-                  "text-center text-[10px] font-medium leading-none",
+                  "text-center text-[10px] font-medium leading-none lg:text-xs",
                   current ? "text-brand-700" : completed ? "text-slate-500" : "text-slate-300"
                 )}
               >

@@ -1,17 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronLeft } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import { SingleChoiceQuestion } from "@/components/onboarding/single-choice-question";
 import { MultiChoiceQuestion } from "@/components/onboarding/multi-choice-question";
 import { OnboardingContinueButton } from "@/components/onboarding/onboarding-continue-button";
+import { OnboardingBackButton } from "@/components/onboarding/onboarding-back-button";
+import { GOALS_STEPS, getPreviousPageHref, type GoalsStepKey } from "@/lib/onboarding-flow";
 import type { CareerGoal, MoveTimeline, WorkSituation } from "@/lib/types/database";
-
-const TOTAL_QUESTIONS = 3;
 
 const WORK_SITUATIONS: { value: WorkSituation; label: string }[] = [
   { value: "employed", label: "Employed" },
@@ -37,16 +37,46 @@ const CAREER_GOALS: { value: CareerGoal; label: string }[] = [
   { value: "first_job", label: "First job / more experience" },
 ];
 
-export default function GoalsStep() {
+function initialStepIndex(step: string | null): number {
+  const idx = GOALS_STEPS.indexOf(step as GoalsStepKey);
+  return idx >= 0 ? idx : 0;
+}
+
+function GoalsStep() {
   const router = useRouter();
-  const [questionIndex, setQuestionIndex] = useState(0);
+  const searchParams = useSearchParams();
+  const [loading, setLoading] = useState(true);
+  const [questionIndex, setQuestionIndex] = useState(() => initialStepIndex(searchParams.get("step")));
   const [workSituation, setWorkSituation] = useState<WorkSituation | null>(null);
   const [moveTimeline, setMoveTimeline] = useState<MoveTimeline | null>(null);
   const [careerGoals, setCareerGoals] = useState<CareerGoal[]>([]);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    async function prefill() {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("work_situation, move_timeline, career_goals")
+        .eq("id", user.id)
+        .single();
+      if (profile?.work_situation) setWorkSituation(profile.work_situation);
+      if (profile?.move_timeline) setMoveTimeline(profile.move_timeline);
+      if (profile?.career_goals?.length) setCareerGoals(profile.career_goals);
+      setLoading(false);
+    }
+    prefill();
+  }, []);
+
   function goNext() {
-    setQuestionIndex((i) => Math.min(i + 1, TOTAL_QUESTIONS - 1));
+    setQuestionIndex((i) => Math.min(i + 1, GOALS_STEPS.length - 1));
   }
 
   function goBack() {
@@ -88,57 +118,66 @@ export default function GoalsStep() {
 
   return (
     <div>
-      <OnboardingProgress phaseIndex={1} progress={questionIndex / TOTAL_QUESTIONS} />
-
-      {questionIndex > 0 && (
-        <button
-          type="button"
-          onClick={goBack}
-          aria-label="Go back"
-          className="mt-4 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-      )}
-
-      <div className={questionIndex > 0 ? "mt-4" : "mt-8"}>
-        {questionIndex === 0 && (
-          <SingleChoiceQuestion
-            question="What's your current work situation?"
-            options={WORK_SITUATIONS}
-            value={workSituation}
-            onSelect={(v) => {
-              setWorkSituation(v);
-              setTimeout(goNext, 300);
-            }}
-          />
-        )}
-
-        {questionIndex === 1 && (
-          <SingleChoiceQuestion
-            question="How soon are you looking to move?"
-            options={MOVE_TIMELINES}
-            value={moveTimeline}
-            onSelect={(v) => {
-              setMoveTimeline(v);
-              setTimeout(goNext, 300);
-            }}
-          />
-        )}
-
-        {questionIndex === 2 && (
-          <>
-            <MultiChoiceQuestion
-              question="What are you hoping for in your next role?"
-              helper="Pick as many as apply."
-              options={CAREER_GOALS}
-              value={careerGoals}
-              onToggle={toggleCareerGoal}
-            />
-            <OnboardingContinueButton onClick={handleFinish} disabled={careerGoals.length === 0} loading={saving} />
-          </>
-        )}
+      <OnboardingProgress phaseIndex={1} progress={questionIndex / GOALS_STEPS.length} />
+      <div className="mt-4">
+        <OnboardingBackButton
+          onClick={questionIndex > 0 ? goBack : undefined}
+          href={questionIndex === 0 ? getPreviousPageHref("goals") ?? undefined : undefined}
+        />
       </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-slate-400">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+      ) : (
+        <div className="mt-4 lg:mt-6">
+          {questionIndex === 0 && (
+            <SingleChoiceQuestion
+              question="What's your current work situation?"
+              options={WORK_SITUATIONS}
+              value={workSituation}
+              onSelect={(v) => {
+                setWorkSituation(v);
+                setTimeout(goNext, 300);
+              }}
+            />
+          )}
+
+          {questionIndex === 1 && (
+            <SingleChoiceQuestion
+              question="How soon are you looking to move?"
+              options={MOVE_TIMELINES}
+              value={moveTimeline}
+              onSelect={(v) => {
+                setMoveTimeline(v);
+                setTimeout(goNext, 300);
+              }}
+            />
+          )}
+
+          {questionIndex === 2 && (
+            <>
+              <MultiChoiceQuestion
+                question="What are you hoping for in your next role?"
+                helper="Pick as many as apply."
+                options={CAREER_GOALS}
+                value={careerGoals}
+                onToggle={toggleCareerGoal}
+              />
+              <OnboardingContinueButton onClick={handleFinish} disabled={careerGoals.length === 0} loading={saving} />
+            </>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+export default function GoalsStepPage() {
+  return (
+    <Suspense fallback={null}>
+      <GoalsStep />
+    </Suspense>
   );
 }

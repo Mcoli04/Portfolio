@@ -26,7 +26,7 @@ export function ChoiceButton({
       onClick={onClick}
       aria-pressed={selected}
       className={cn(
-        "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition-all duration-150 active:scale-[0.98]",
+        "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition-all duration-150 active:scale-[0.98] lg:gap-4 lg:rounded-3xl lg:px-6 lg:py-4 lg:text-base",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2",
         selected
           ? "border-brand-600 bg-brand-50 text-brand-700"
@@ -37,15 +37,15 @@ export function ChoiceButton({
       {multi && (
         <span
           className={cn(
-            "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors",
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors lg:h-6 lg:w-6",
             selected ? "border-brand-600 bg-brand-600" : "border-slate-300"
           )}
         >
-          {selected && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
+          {selected && <Check className="h-3.5 w-3.5 text-white lg:h-4 lg:w-4" strokeWidth={3} />}
         </span>
       )}
       <span className="flex-1">{label}</span>
-      {!multi && selected && <Check className="h-4 w-4 shrink-0 text-brand-600" strokeWidth={3} />}
+      {!multi && selected && <Check className="h-4 w-4 shrink-0 text-brand-600 lg:h-5 lg:w-5" strokeWidth={3} />}
     </button>
   );
 }

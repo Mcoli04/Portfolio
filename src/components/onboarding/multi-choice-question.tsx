@@ -21,9 +21,9 @@ export function MultiChoiceQuestion<T extends string>({
 }) {
   return (
     <div>
-      <h1 className="text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl">{question}</h1>
-      {helper && <p className="mt-2 text-center text-sm text-slate-500">{helper}</p>}
-      <div className="mt-6 space-y-2.5">
+      <h1 className="text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl lg:text-3xl">{question}</h1>
+      {helper && <p className="mt-2 text-center text-sm text-slate-500 lg:text-base">{helper}</p>}
+      <div className="mt-6 space-y-2.5 lg:mt-10 lg:space-y-3">
         {options.map((option) => (
           <ChoiceButton
             key={option.value}

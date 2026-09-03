@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/client";
 import { TagInput } from "@/components/ui/tag-input";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
 import { OnboardingContinueButton } from "@/components/onboarding/onboarding-continue-button";
+import { OnboardingBackButton } from "@/components/onboarding/onboarding-back-button";
+import { getPreviousPageHref } from "@/lib/onboarding-flow";
 import { cn } from "@/lib/utils";
 import type { ParsedCvData } from "@/lib/types/database";
 
@@ -126,30 +128,31 @@ export default function ReviewCvStep() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16 text-slate-400">
-        <Loader2 className="h-6 w-6 animate-spin" />
-      </div>
-    );
-  }
-
   return (
     <div>
       <OnboardingProgress phaseIndex={0} progress={1} />
+      <div className="mt-4">
+        <OnboardingBackButton href={getPreviousPageHref("review") ?? undefined} />
+      </div>
 
-      <h1 className="mt-8 text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl">
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-slate-400">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+      ) : (
+        <>
+      <h1 className="mt-4 text-center text-xl font-bold leading-snug text-slate-900 sm:text-2xl lg:text-3xl">
         Here&apos;s your profile
       </h1>
 
       {hadWarnings && (
-        <div className="mx-auto mt-3 flex max-w-sm items-start gap-2 rounded-2xl bg-brand-50 p-3 text-xs leading-relaxed text-brand-800">
+        <div className="mx-auto mt-3 flex max-w-sm items-start gap-2 rounded-2xl bg-brand-50 p-3 text-xs leading-relaxed text-brand-800 lg:max-w-md lg:text-sm">
           <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />
           We&apos;ve filled this in from your CV. Give it a quick check before continuing.
         </div>
       )}
       {!hadWarnings && (
-        <p className="mt-2 text-center text-sm text-slate-500">
+        <p className="mt-2 text-center text-sm text-slate-500 lg:text-base">
           We&apos;ve filled this in from your CV — check it over and fix anything that&apos;s not quite right.
         </p>
       )}
@@ -185,6 +188,8 @@ export default function ReviewCvStep() {
       </Section>
 
       <OnboardingContinueButton onClick={handleSave} loading={saving} />
+        </>
+      )}
     </div>
   );
 }
