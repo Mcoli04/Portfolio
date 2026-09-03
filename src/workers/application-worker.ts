@@ -5,13 +5,13 @@
  * application left stuck in "applying" (e.g. the server process died
  * mid-submission) gets picked back up and retried here instead of hanging
  * forever in an ambiguous state.
+ *
+ * .env.local is loaded by scripts/load-worker-env.cjs, preloaded via the
+ * `worker:apply` npm script's `tsx --require` flag — not here. tsx hoists
+ * this file's own imports above any top-level code in the file (matching
+ * ESM import semantics), so an env-loading call placed here would run too
+ * late: after src/lib/config.ts has already read process.env.
  */
-try {
-  process.loadEnvFile(".env.local");
-} catch {
-  // .env.local not present — fall back to whatever the process environment already has.
-}
-
 import { createServiceRoleClient } from "../lib/supabase/service-role";
 import { ApplicationAutomationEngine } from "../lib/applications/engine";
 import type { Job, Profile, ResumeVersion } from "../lib/types/database";

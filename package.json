@@ -8,8 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "worker:ingest": "tsx src/workers/job-ingest-worker.ts",
-    "worker:apply": "tsx src/workers/application-worker.ts"
+    "worker:ingest": "tsx --require ./scripts/load-worker-env.cjs src/workers/job-ingest-worker.ts",
+    "worker:apply": "tsx --require ./scripts/load-worker-env.cjs src/workers/application-worker.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
