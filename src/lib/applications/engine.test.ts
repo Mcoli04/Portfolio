@@ -108,5 +108,13 @@ test("engine.run(): a real Greenhouse job with no verified provider resolves to 
     assert.equal("submitted_resume_id" in update, false);
     assert.equal("cover_letter_id" in update, false);
   }
-  assert.equal(recorder.applicationsUpdates.at(-1)?.status, "manual_required");
+  const finalUpdate = recorder.applicationsUpdates.at(-1);
+  assert.equal(finalUpdate?.status, "manual_required");
+  // No provider was ever selected on this path, so the channel fields must
+  // be reset rather than left stale (e.g. carrying "browser_automation"
+  // from an earlier attempt made before its domain was allowlist-gated) —
+  // that stale value is exactly what showed up as "Browser_automation" on
+  // the Applications page.
+  assert.equal(finalUpdate?.application_method, "manual");
+  assert.equal(finalUpdate?.application_provider, null);
 });

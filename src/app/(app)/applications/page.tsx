@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ApplicationStatusBadge } from "@/components/app/application-status-badge";
 import { documentStatusLabel } from "@/lib/applications/document-status";
+import { applicationChannelLabel } from "@/lib/applications/method-label";
 import { FileText, ExternalLink } from "lucide-react";
 import type { Application, Job } from "@/lib/types/database";
 
@@ -52,8 +53,7 @@ export default async function ApplicationsPage() {
             <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-500">
               {app.match_score != null && <span>{app.match_score}% match</span>}
               <span>Applied {app.submitted_at ? new Date(app.submitted_at).toLocaleDateString() : new Date(app.created_at).toLocaleDateString()}</span>
-              <span className="capitalize">{app.application_method.replace("_", " ")}</span>
-              {app.application_provider && <span className="capitalize">{app.application_provider}</span>}
+              <span>{applicationChannelLabel(app)}</span>
               {app.external_application_id && <span>Ref: {app.external_application_id}</span>}
             </div>
 

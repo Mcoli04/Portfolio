@@ -96,14 +96,16 @@ export class ApplicationAutomationEngine {
     await logEvent(supabase, application.id, "APPLICATION_STARTED", { jobId: job.id });
 
     if (!resumeVersion) {
-      await this.markManual(supabase, application, "No parsed CV is available to submit.");
+      await this.markManual(supabase, application, "No parsed CV is available to submit.", { clearChannel: true });
       return { status: "manual_required", reason: "No CV on file." };
     }
     await logEvent(supabase, application.id, "CV_SELECTED", { resumeVersionId: resumeVersion.id });
 
     const provider = selectProvider(job);
     if (!provider) {
-      await this.markManual(supabase, application, "No supported automatic application channel for this job.");
+      await this.markManual(supabase, application, "No supported automatic application channel for this job.", {
+        clearChannel: true,
+      });
       return { status: "manual_required", reason: "No automatic application channel available." };
     }
 
@@ -213,11 +215,29 @@ export class ApplicationAutomationEngine {
     return { status: "failed", reason: result.errorMessage ?? "Unknown error" };
   }
 
-  private async markManual(supabase: SupabaseClient, application: Application, reason: string) {
-    await supabase
-      .from("applications")
-      .update({ status: "manual_required", manual_required: true, error_message: reason })
-      .eq("id", application.id);
+  /**
+   * `clearChannel` resets application_method/application_provider to "manual"/null
+   * — pass it only when no provider was ever selected for this run (no CV,
+   * or selectProvider() returned null), so a stale value from an earlier
+   * attempt (e.g. a provider that used to be reachable before this job's
+   * domain was removed from the browser-automation allowlist) can't keep
+   * claiming a specific automated channel was used. When a provider WAS
+   * actually attempted and it returned manualRequired itself (e.g. it hit
+   * a CAPTCHA), leave the channel fields alone — they accurately record
+   * what was genuinely tried.
+   */
+  private async markManual(
+    supabase: SupabaseClient,
+    application: Application,
+    reason: string,
+    options: { clearChannel?: boolean } = {}
+  ) {
+    const updates: Record<string, unknown> = { status: "manual_required", manual_required: true, error_message: reason };
+    if (options.clearChannel) {
+      updates.application_method = "manual";
+      updates.application_provider = null;
+    }
+    await supabase.from("applications").update(updates).eq("id", application.id);
     await logEvent(supabase, application.id, "MANUAL_ACTION_REQUIRED", { reason });
     await supabase.from("notifications").insert({
       user_id: application.user_id,
