@@ -59,13 +59,13 @@ export function ResumeManager({ resumes, defaultResumeId }: { resumes: Resume[];
             <div className="flex items-center gap-2.5">
               <FileText className="h-4 w-4 text-slate-400" />
               <span className="text-sm font-medium text-slate-900">{resume.label}</span>
-              {(resume.is_default || resume.id === defaultResumeId) && (
+              {resume.id === defaultResumeId && (
                 <span className="flex items-center gap-1 rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-semibold text-brand-700">
                   <Star className="h-3 w-3" /> Default
                 </span>
               )}
             </div>
-            {!(resume.is_default || resume.id === defaultResumeId) && (
+            {resume.id !== defaultResumeId && (
               <button onClick={() => setDefault(resume.id)} className="text-xs font-medium text-brand-600 hover:underline">
                 Make default
               </button>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { extractCvText } from "@/lib/cv/extract-text";
 import { parseCvWithAi } from "@/lib/ai/cv-parser";
+import { idsToClearForNewDefault } from "@/lib/resumes/default";
 
 export const runtime = "nodejs";
 
@@ -43,6 +44,21 @@ export async function POST(req: NextRequest) {
   });
   if (uploadError) {
     return NextResponse.json({ error: `Upload failed: ${uploadError.message}` }, { status: 500 });
+  }
+
+  if (setAsDefault) {
+    // Clear every existing default first (not just the most recent one, in
+    // case duplicates already slipped in) so this insert can never coexist
+    // with a stale default — see migration 0008's
+    // resumes_one_default_per_user unique index, which this ordering keeps
+    // us on the right side of.
+    const { data: existingResumes } = await supabase.from("resumes").select("id, is_default").eq("user_id", user.id);
+    const idsToClear = idsToClearForNewDefault(
+      (existingResumes ?? []).map((r) => ({ id: r.id, isDefault: r.is_default }))
+    );
+    if (idsToClear.length > 0) {
+      await supabase.from("resumes").update({ is_default: false }).in("id", idsToClear);
+    }
   }
 
   const { data: resume, error: resumeError } = await supabase
