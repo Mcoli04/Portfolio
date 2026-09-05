@@ -631,3 +631,215 @@ test("engine.run(): a select field whose options don't match our stored answer s
   assert.equal(outcome.status, "manual_required");
   assert.equal(provider.submitCallCount, 0);
 });
+
+test("engine.run(): structured identity fields (full_name, first_name, last_name, email, phone) resolve directly from the profile", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const supabase = createFakeSupabase(recorder, { libraryRows: [] });
+
+  const form: ApplicationForm = {
+    fields: [
+      { id: "f_full", label: "Full Name", type: "text", required: true, role: "full_name" },
+      { id: "f_first", label: "First Name", type: "text", required: true, role: "first_name" },
+      { id: "f_last", label: "Last Name", type: "text", required: true, role: "last_name" },
+      { id: "f_email", label: "Email Address", type: "text", required: true, role: "email" },
+      { id: "f_phone", label: "Phone Number", type: "text", required: false, role: "phone" },
+    ],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ full_name: "Maria Borg", first_name: "Maria", last_name: "Borg", email: "maria@example.com", phone: "+356 7900 0000" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, {
+    f_full: "Maria Borg",
+    f_first: "Maria",
+    f_last: "Borg",
+    f_email: "maria@example.com",
+    f_phone: "+356 7900 0000",
+  });
+  assert.equal(provider.lastCandidate?.firstName, "Maria");
+  assert.equal(provider.lastCandidate?.lastName, "Borg");
+
+  const identityEvent = recorder.events.find((e) => e.event_type === "IDENTITY_FIELDS_MAPPED");
+  assert.ok(identityEvent, "expected an IDENTITY_FIELDS_MAPPED audit event");
+});
+
+test("engine.run(): a required identity field with missing structured data stops before submission, preserving the inspected channel", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const supabase = createFakeSupabase(recorder, { libraryRows: [] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "f_phone", label: "Phone Number", type: "text", required: true, role: "phone" }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ phone: null });
+  const job = makeJob({ application_method: "ats" });
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "manual_required");
+  assert.equal(provider.submitCallCount, 0);
+
+  const finalUpdate = recorder.applicationsUpdates.at(-1);
+  assert.equal(finalUpdate?.application_method, "ats");
+  assert.equal(finalUpdate?.application_provider, "fake_form_provider");
+
+  const manualEvent = recorder.events.find((e) => e.event_type === "MANUAL_ACTION_REQUIRED");
+  const questions = manualEvent?.metadata.questions as { reason: string }[] | undefined;
+  assert.ok(questions?.some((q) => q.reason === "missing_structured_identity_data"));
+});
+
+test("engine.run(): an optional identity field with missing structured data is omitted, submission still proceeds", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const supabase = createFakeSupabase(recorder, { libraryRows: [] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "f_phone", label: "Phone Number", type: "text", required: false, role: "phone" }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ phone: null });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, {});
+});
+
+test("engine.run(): first_name/last_name are never derived from full_name — a required first_name field blocks even though full_name is set", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const supabase = createFakeSupabase(recorder, { libraryRows: [] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "f_first", label: "First Name", type: "text", required: true, role: "first_name" }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  // full_name is populated but first_name was never explicitly collected.
+  const profile = makeProfile({ full_name: "Maria Anne Borg", first_name: null, last_name: null });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "manual_required");
+  assert.equal(provider.submitCallCount, 0, "must never guess a first name by splitting full_name");
+});
+
+test("engine.run(): identity-role fields never invoke answerQuestion(), even when a library entry would otherwise match their label", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  // A custom entry whose question_text exactly matches the field's label
+  // and would resolve via answerQuestion()'s exact-text match — but must
+  // never be consulted, because this field is identity-role, not a
+  // screening question.
+  const hijackEntry = makeLibraryEntry({ id: "hijack", question_key: "custom_hijack", question_text: "Email Address", answer_text: "WRONG-HIJACKED-VALUE@example.com" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [hijackEntry] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "f_email", label: "Email Address", type: "text", required: true, role: "email" }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ email: "real-candidate@example.com" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, { f_email: "real-candidate@example.com" });
+  assert.ok(!recorder.events.some((e) => e.event_type === "ANSWERS_RESOLVED"), "the identity field must not be counted as a resolved screening question");
+});
+
+test("engine.run(): a file field with role 'resume' is satisfied by the already-prepared resume data", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const supabase = createFakeSupabase(recorder, { libraryRows: [] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "f_resume", label: "Upload your resume", type: "file", required: true, role: "resume" }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, {});
+});
+
+test("engine.run(): a required file field with no recognized role stops before submission, never synthesizing a file", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const supabase = createFakeSupabase(recorder, { libraryRows: [] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "f_references", label: "Upload references", type: "file", required: true }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "manual_required");
+  assert.equal(provider.submitCallCount, 0);
+
+  const manualEvent = recorder.events.find((e) => e.event_type === "MANUAL_ACTION_REQUIRED");
+  const questions = manualEvent?.metadata.questions as { reason: string }[] | undefined;
+  assert.ok(questions?.some((q) => q.reason === "unrecognized_file_field"));
+});
+
+test("engine.run(): an optional file field with no recognized role is omitted, submission still proceeds", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const supabase = createFakeSupabase(recorder, { libraryRows: [] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "f_references", label: "Upload references (optional)", type: "file", required: false }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, {});
+});

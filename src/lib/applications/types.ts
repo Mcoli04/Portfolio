@@ -1,10 +1,30 @@
 import type { Job, IntegrationStatus } from "@/lib/types/database";
 
+/**
+ * What a field actually represents, independent of its input `type`.
+ * "screening_question" (the default when `role` is omitted, preserving
+ * every existing provider's behavior) routes through answerQuestion() and
+ * the verified Answer Library. Every other role is structured candidate
+ * data — resolved directly from the profile or the already-prepared
+ * documents, and never via answerQuestion() or the Answer Library.
+ */
+export type FormFieldRole =
+  | "full_name"
+  | "first_name"
+  | "last_name"
+  | "email"
+  | "phone"
+  | "resume"
+  | "cover_letter"
+  | "screening_question";
+
 export interface FormField {
   id: string;
   label: string;
   type: "text" | "textarea" | "select" | "file" | "boolean";
   required: boolean;
+  /** Defaults to "screening_question" when omitted. */
+  role?: FormFieldRole;
   /** For type "select": the exact literal values this provider's form accepts. */
   options?: string[];
   /**
@@ -27,6 +47,8 @@ export interface ApplicationForm {
 
 export interface CandidateApplicationData {
   fullName: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   phone?: string;
   resumeText: string;

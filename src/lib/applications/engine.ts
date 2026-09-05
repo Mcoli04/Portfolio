@@ -4,6 +4,7 @@ import { tailorCvForJob } from "@/lib/ai/cv-tailoring";
 import { generateCoverLetter } from "@/lib/ai/cover-letter";
 import { answerQuestion } from "@/lib/ai/answer-questions";
 import { normalizeAnswerForField } from "./answer-normalization";
+import { isIdentityRole, isDocumentRole, resolveIdentityFieldValue, hasDocumentData } from "./identity-fields";
 import { getApplicationProvider } from "./provider-registry";
 import { BrowserAutomationApplicationProvider } from "./providers/browser-automation-provider";
 import type { ApplicationProvider, CandidateApplicationData, FormField } from "./types";
@@ -150,11 +151,16 @@ export class ApplicationAutomationEngine {
       .single();
     await logEvent(supabase, application.id, "COVER_LETTER_CREATED", { aiAssisted: coverLetter.aiAssisted });
 
-    const answerResolution = await this.resolveApplicationAnswers(supabase, application, job, profile, provider);
+    const answerResolution = await this.resolveApplicationAnswers(supabase, application, job, profile, provider, {
+      resumeText: tailored.text,
+      coverLetterText: coverLetter.text,
+    });
     if (answerResolution.blocked) return answerResolution.outcome;
 
     const candidate: CandidateApplicationData = {
       fullName: profile.full_name ?? profile.email,
+      firstName: profile.first_name ?? undefined,
+      lastName: profile.last_name ?? undefined,
       email: profile.email,
       phone: profile.phone ?? undefined,
       resumeText: tailored.text,
@@ -228,20 +234,26 @@ export class ApplicationAutomationEngine {
   }
 
   /**
-   * Resolves the employer's screening questions (spec: verified Answer
-   * Library wiring) using ONLY answerQuestion()'s verified-entry matching —
-   * never CV-derived or AI-generated content. A provider with no form is
-   * untouched (identical to the previous no-op behavior). A required field
-   * that can't be traced to a verified answer_library row stops the run
-   * before submitApplication() is ever called; an optional one is simply
-   * omitted rather than guessed.
+   * Resolves every field on the employer's application form into
+   * candidate.answers. Three disjoint kinds of field, each with its own
+   * source of truth: document fields (type "file") are satisfied by the
+   * already-prepared resume/cover letter; identity fields (role full_name/
+   * first_name/last_name/email/phone) resolve only from structured profile
+   * data; everything else is a screening question resolved ONLY through
+   * answerQuestion()'s verified Answer Library matching — never CV-derived
+   * or AI-generated content. A provider with no form is untouched
+   * (identical to the previous no-op behavior). A required field of any
+   * kind that can't be safely resolved stops the run before
+   * submitApplication() is ever called; an optional one is simply omitted
+   * rather than guessed.
    */
   private async resolveApplicationAnswers(
     supabase: SupabaseClient,
     application: Application,
     job: Job,
     profile: Profile,
-    provider: ApplicationProvider
+    provider: ApplicationProvider,
+    documents: { resumeText: string; coverLetterText: string }
   ): Promise<{ blocked: true; outcome: EngineOutcome } | { blocked: false; answers: Record<string, string> }> {
     const form = await provider.getApplicationForm(job);
     if (!form) {
@@ -279,18 +291,52 @@ export class ApplicationAutomationEngine {
     // worded — the fact itself always comes from profile.work_authorization.
     const workAuthorizationEntry = library.find((e) => e.question_key === "work_authorization" && e.verified);
 
-    const resolved: { field: FormField; answer: string; sourceEntryId: string }[] = [];
+    const resolvedQuestions: { field: FormField; answer: string; sourceEntryId: string }[] = [];
+    const resolvedIdentity: { field: FormField; answer: string; role: string }[] = [];
     const unansweredRequired: { field: FormField; reason: string }[] = [];
 
     for (const field of form.fields) {
-      if (field.type === "file") continue; // resume/cover letter — handled by uploadResume/uploadCoverLetter, not a screening question
+      // Document fields (type "file") are never screening questions and
+      // never contribute a candidate.answers entry — the actual document
+      // is already on the candidate object (resumeText/resumeFileBuffer/
+      // coverLetterText), which each provider's own submission code reads
+      // directly. This branch only confirms the relevant document exists;
+      // a file field this app has no recognized data for (role omitted,
+      // or an unsupported document type) can never be synthesized.
+      if (field.type === "file") {
+        const satisfied = isDocumentRole(field.role) ? hasDocumentData(field.role, documents) : false;
+        if (!satisfied && field.required) {
+          unansweredRequired.push({
+            field,
+            reason: field.role === "resume" || field.role === "cover_letter" ? `missing_${field.role}_document` : "unrecognized_file_field",
+          });
+        }
+        continue;
+      }
+
+      // Identity fields resolve ONLY from structured profile data — never
+      // via answerQuestion()/the Answer Library, so a field asking for
+      // "Full Name" or "Email" can never be misclassified as a screening
+      // question with no verified answer. first_name/last_name come only
+      // from profile.first_name/last_name — never split from full_name.
+      if (isIdentityRole(field.role)) {
+        const value = resolveIdentityFieldValue(field.role, profile);
+        if (value) {
+          resolvedIdentity.push({ field, answer: value, role: field.role });
+        } else if (field.required) {
+          unansweredRequired.push({ field, reason: "missing_structured_identity_data" });
+        }
+        continue;
+      }
+
+      // role is "screening_question" (the default when omitted) — unchanged pipeline.
       const result = await answerQuestion(field.label, library);
       const normalized = normalizeAnswerForField(field, result, {
         workAuthorization: profile.work_authorization,
         workAuthorizationEntryId: workAuthorizationEntry?.id ?? null,
       });
       if (normalized.ok) {
-        resolved.push({ field, answer: normalized.value, sourceEntryId: normalized.sourceEntryId });
+        resolvedQuestions.push({ field, answer: normalized.value, sourceEntryId: normalized.sourceEntryId });
       } else if (field.required) {
         unansweredRequired.push({ field, reason: normalized.reason });
       }
@@ -298,7 +344,7 @@ export class ApplicationAutomationEngine {
     }
 
     if (unansweredRequired.length > 0) {
-      const reasonText = `This employer asks required question(s) with no safe verified answer: ${unansweredRequired
+      const reasonText = `This employer requires field(s) with no safe answer: ${unansweredRequired
         .map((u) => `"${u.field.label}"`)
         .join(", ")}.`;
       await this.markManual(supabase, application, reasonText, {
@@ -313,15 +359,24 @@ export class ApplicationAutomationEngine {
       return { blocked: true, outcome: { status: "manual_required", reason: reasonText } };
     }
 
-    if (resolved.length > 0) {
+    if (resolvedIdentity.length > 0) {
+      await logEvent(supabase, application.id, "IDENTITY_FIELDS_MAPPED", {
+        fields: resolvedIdentity.map((r) => ({ fieldId: r.field.id, role: r.role })),
+      });
+    }
+
+    if (resolvedQuestions.length > 0) {
       await logEvent(supabase, application.id, "ANSWERS_RESOLVED", {
-        answers: resolved.map((r) => ({ fieldId: r.field.id, questionText: r.field.label, sourceEntryId: r.sourceEntryId })),
+        answers: resolvedQuestions.map((r) => ({ fieldId: r.field.id, questionText: r.field.label, sourceEntryId: r.sourceEntryId })),
       });
     } else {
       await logEvent(supabase, application.id, "QUESTIONS_COMPLETED", { note: "No dynamic screening questions detected for this channel." });
     }
 
-    return { blocked: false, answers: Object.fromEntries(resolved.map((r) => [r.field.id, r.answer])) };
+    const answers = Object.fromEntries(
+      [...resolvedQuestions, ...resolvedIdentity].map((r) => [r.field.id, r.answer])
+    );
+    return { blocked: false, answers };
   }
 
   /**
