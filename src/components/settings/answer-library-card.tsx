@@ -11,6 +11,7 @@ const SUGGESTED_QUESTIONS: { key: string; label: string; questionText: string; p
   { key: "linkedin_url", label: "LinkedIn URL", questionText: "What is your LinkedIn profile URL?", placeholder: "https://linkedin.com/in/yourname" },
   { key: "portfolio_url", label: "Portfolio / website", questionText: "Do you have a portfolio or personal website?", placeholder: "https://yoursite.com" },
   { key: "notice_period", label: "Notice period", questionText: "What is your notice period?", placeholder: "e.g. 1 month" },
+  { key: "start_date", label: "Earliest start date", questionText: "What is your earliest possible start date?", placeholder: "e.g. Immediately, or 1 September 2025" },
   { key: "salary_expectation", label: "Salary expectations", questionText: "What are your salary expectations?", placeholder: "e.g. €35,000 - €40,000" },
   { key: "relocation", label: "Willingness to relocate", questionText: "Are you willing to relocate?", placeholder: "e.g. Open to relocating within Malta" },
   { key: "sponsorship_requirement", label: "Sponsorship requirement", questionText: "Will you now or in the future require sponsorship?", placeholder: "e.g. I do not require sponsorship" },

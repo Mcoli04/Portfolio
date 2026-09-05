@@ -39,14 +39,28 @@ export function isHardBlockedQuestion(questionText: string): boolean {
 const COMMON_QUESTION_KEYS: Record<string, RegExp> = {
   work_authorization: /work (permit|authoriz|authoris)|eligible to work|right to work/i,
   notice_period: /notice period/i,
-  salary_expectation: /salary expectation|expected salary|desired salary/i,
+  // Broadened to cover real employer phrasings beyond the original three
+  // exact phrases — e.g. "desired annual gross salary" (matches via
+  // "gross salary"), "annual salary", "compensation expectation". Every
+  // variant still only ever unlocks the user's own verified
+  // salary_expectation text, returned unchanged — never rewritten,
+  // never converted, never split out of a range.
+  salary_expectation: /salary expectation|expected salary|desired salary|annual salary|gross salary|compensation expectation/i,
   years_experience: /years of experience|how many years/i,
   relocation: /relocat/i,
   remote_preference: /remote|hybrid|on-?site preference/i,
   languages: /which languages|language(s)? do you speak/i,
   linkedin_url: /linkedin/i,
-  portfolio_url: /portfolio|personal website|github/i,
+  // "website" alone (not just "personal website") to match real employer
+  // phrasings like a bare "Website" field label.
+  portfolio_url: /portfolio|website|github/i,
   sponsorship_requirement: /sponsorship/i,
+  // Deliberately independent of notice_period — a start date is a
+  // specific calendar fact, never computed from a general notice-period
+  // policy statement (which may not even be a parseable duration). Only
+  // ever answered from the user's own explicitly verified start_date
+  // entry, exactly like every other free-text key here.
+  start_date: /earliest.*start|when (can|could) you start|available to start|start date/i,
 };
 
 function keyForQuestion(questionText: string): string | null {
