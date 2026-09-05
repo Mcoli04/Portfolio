@@ -1,6 +1,7 @@
 import type { WorkAuthorization } from "@/lib/types/database";
 import type { QuestionAnswer } from "@/lib/ai/answer-questions";
 import type { FormField } from "./types";
+import { isEuWideWorkAuthorizationQuestion, resolveEuWorkAuthorizationAnswer } from "./eu-work-authorization";
 
 export type FieldAnswerOutcome = { ok: true; value: string; sourceEntryId: string } | { ok: false; reason: string };
 
@@ -107,6 +108,16 @@ export function normalizeAnswerForField(
     const fact = resolveWorkAuthorizationBoolean(field.label, context.workAuthorization);
     if (fact === null) return { ok: false, reason: "unrecognized_work_authorization_phrasing" };
     return { ok: true, value: fact ? field.trueValue : field.falseValue, sourceEntryId: context.workAuthorizationEntryId };
+  }
+
+  // A select-shaped rendering of the confirmed EU-wide "legal right to
+  // work" question — resolved entirely from the structured profile fact,
+  // like the boolean branch above, and checked before the generic
+  // Answer Library match below so it can never fall through to fuzzy
+  // free-text option matching. Deliberately narrower than, and separate
+  // from, the Malta-scoped boolean logic above — see eu-work-authorization.ts.
+  if (field.type === "select" && isEuWideWorkAuthorizationQuestion(field.label)) {
+    return resolveEuWorkAuthorizationAnswer(field, context);
   }
 
   if (resolved.answer === null || !resolved.sourceEntryId) {

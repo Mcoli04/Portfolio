@@ -7,7 +7,7 @@ import { BrowserAutomationApplicationProvider } from "./providers/browser-automa
 import { GreenhouseApplicationProvider } from "./providers/greenhouse-provider";
 import { BaseApplicationProvider } from "./providers/base";
 import type { ApplicationForm, CandidateApplicationData, SubmissionResult } from "./types";
-import type { Application, AnswerLibraryEntry, Job, Profile, ResumeVersion } from "@/lib/types/database";
+import type { Application, AnswerLibraryEntry, Job, Profile, ResumeVersion, WorkAuthorization } from "@/lib/types/database";
 
 // A real, non-demo Greenhouse job shaped like the reported Betsson case:
 // application_method "ats" with application_provider "greenhouse" (whose
@@ -1511,6 +1511,257 @@ test("engine.run(): a fetch failure during read-only Greenhouse form inspection 
     assert.equal(finalUpdate?.status, "manual_required");
     assert.equal(finalUpdate?.application_method, "manual");
     assert.equal(finalUpdate?.application_provider, null);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+// ---- EU-wide work-authorization select question (structurally separate from Malta-scoped boolean logic) ----
+
+const EU_LEGAL_RIGHT_QUESTION = "Do you currently have the legal right to work in the European Union?";
+
+test("engine.run(): the confirmed EU-wide select question resolves to the provider's own declared Yes value for eu_eea_swiss_citizen, and submission proceeds", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "eu_legal_right", label: EU_LEGAL_RIGHT_QUESTION, type: "select", required: true, options: [{ label: "Yes", value: "1" }, { label: "No", value: "0" }] }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ work_authorization: "eu_eea_swiss_citizen" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, { eu_legal_right: "1" });
+
+  const resolvedEvent = recorder.events.find((e) => e.event_type === "ANSWERS_RESOLVED");
+  const answers = resolvedEvent?.metadata.answers as { fieldId: string; sourceEntryId: string }[] | undefined;
+  assert.equal(answers?.[0]?.sourceEntryId, "wa-entry");
+});
+
+test("engine.run(): the confirmed EU-wide select question stays unresolved and manual_required for every enum value except eu_eea_swiss_citizen", async () => {
+  const cases: { workAuthorization: WorkAuthorization | null; expectedReason: string }[] = [
+    { workAuthorization: "malta_permit_holder", expectedReason: "not_established_eu_wide" },
+    { workAuthorization: "requires_sponsorship", expectedReason: "not_established_eu_wide" },
+    { workAuthorization: "prefer_not_to_say", expectedReason: "work_authorization_not_provided" },
+    { workAuthorization: null, expectedReason: "work_authorization_not_provided" },
+  ];
+
+  for (const { workAuthorization, expectedReason } of cases) {
+    const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+    const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+    const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry] });
+
+    const form: ApplicationForm = {
+      fields: [{ id: "eu_legal_right", label: EU_LEGAL_RIGHT_QUESTION, type: "select", required: true, options: [{ label: "Yes", value: "1" }, { label: "No", value: "0" }] }],
+      requiresHumanVerification: false,
+    };
+    const provider = new FakeFormProvider(form);
+
+    const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+    const profile = makeProfile({ work_authorization: workAuthorization });
+    const job = makeJob();
+    const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+    const engine = new ApplicationAutomationEngine();
+    const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+    assert.equal(outcome.status, "manual_required", `expected manual_required for work_authorization=${workAuthorization}`);
+    assert.equal(provider.submitCallCount, 0, `submitApplication must never be called for work_authorization=${workAuthorization}`);
+
+    const manualEvent = recorder.events.find((e) => e.event_type === "MANUAL_ACTION_REQUIRED");
+    const questions = manualEvent?.metadata.questions as { fieldId: string; reason: string }[] | undefined;
+    assert.deepEqual(questions, [{ fieldId: "eu_legal_right", questionText: EU_LEGAL_RIGHT_QUESTION, reason: expectedReason }]);
+  }
+});
+
+test("engine.run(): the EU-wide select rule and the Malta-scoped boolean rule resolve independently and correctly on the same form", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry] });
+
+  const form: ApplicationForm = {
+    fields: [
+      { id: "eu_legal_right", label: EU_LEGAL_RIGHT_QUESTION, type: "select", required: true, options: [{ label: "Yes", value: "1" }, { label: "No", value: "0" }] },
+      { id: "malta_auth", label: "Are you authorized to work in this location without sponsorship?", type: "boolean", required: true, trueValue: "YES_MALTA", falseValue: "NO_MALTA" },
+    ],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ work_authorization: "eu_eea_swiss_citizen" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, { eu_legal_right: "1", malta_auth: "YES_MALTA" });
+});
+
+test("engine.run(): a similarly-worded but Malta-scoped select question does not hit the EU-specific rule, and falls through to ordinary select matching", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry] });
+
+  const form: ApplicationForm = {
+    // A real verified work_authorization entry exists and this label
+    // matches COMMON_QUESTION_KEYS' "right to work" pattern, so
+    // answerQuestion() DOES return the free-text canned sentence here —
+    // proving the failure below comes from ordinary select-label matching
+    // rejecting that sentence, not from the EU-specific resolver (which
+    // would report "not_established_eu_wide" for malta_permit_holder,
+    // a different, distinguishable reason).
+    fields: [{ id: "malta_legal_right", label: "Do you have the legal right to work in Malta?", type: "select", required: true, options: [{ label: "Yes", value: "1" }, { label: "No", value: "0" }] }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ work_authorization: "malta_permit_holder" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "manual_required");
+  const manualEvent = recorder.events.find((e) => e.event_type === "MANUAL_ACTION_REQUIRED");
+  const questions = manualEvent?.metadata.questions as { fieldId: string; reason: string }[] | undefined;
+  assert.deepEqual(questions, [{ fieldId: "malta_legal_right", questionText: "Do you have the legal right to work in Malta?", reason: "no_matching_option" }]);
+});
+
+test("engine.run(): the relocation select question is untouched by the EU-wide rule, even phrased as a Yes/No select for an EU/EEA/Swiss citizen", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const relocationEntry = makeLibraryEntry({ id: "relo-entry", question_key: "relocation", question_text: "Would you need to relocate in order to perform this role?", answer_text: "No" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry, relocationEntry] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "relocate", label: "Would you need to relocate in order to perform this role?", type: "select", required: true, options: [{ label: "Yes", value: "1" }, { label: "No", value: "0" }] }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ work_authorization: "eu_eea_swiss_citizen" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, { relocate: "0" });
+});
+
+test("engine.run(): provider option values are preserved exactly for the EU-wide question, never a hardcoded '1'/'0'", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry] });
+
+  const form: ApplicationForm = {
+    fields: [
+      {
+        id: "eu_legal_right",
+        label: EU_LEGAL_RIGHT_QUESTION,
+        type: "select",
+        required: true,
+        // Deliberately non-numeric, employer-declared values in reversed
+        // order — proves the resolver looks up "Yes" by label, never by
+        // value string or option position.
+        options: [{ label: "No", value: "NEEDS_SPONSORSHIP" }, { label: "Yes", value: "AUTHORIZED_EU_WIDE" }],
+      },
+    ],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ work_authorization: "eu_eea_swiss_citizen" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, { eu_legal_right: "AUTHORIZED_EU_WIDE" });
+});
+
+test("engine.run(): the real GreenhouseApplicationProvider resolves the live-confirmed EU-wide question end to end via its own multi_value_single_select option values, for an EU/EEA/Swiss citizen", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry] });
+
+  const originalFetch = global.fetch;
+  global.fetch = (async () => ({
+    ok: true,
+    json: async () => ({
+      id: 123456,
+      questions: [
+        { id: 1, label: "First Name", required: true, fields: [{ name: "first_name", type: "input_text" }] },
+        { id: 2, label: "Email", required: true, fields: [{ name: "email", type: "input_text" }] },
+        {
+          id: 3,
+          label: "Resume",
+          required: true,
+          fields: [
+            { name: "resume", type: "input_file" },
+            { name: "resume_text", type: "textarea" },
+          ],
+        },
+        {
+          id: 4,
+          label: EU_LEGAL_RIGHT_QUESTION,
+          required: true,
+          fields: [{ name: "question_4", type: "multi_value_single_select", values: [{ label: "Yes", value: 1 }, { label: "No", value: 2 }] }],
+        },
+      ],
+    }),
+  })) as unknown as typeof fetch;
+
+  try {
+    const provider = new GreenhouseApplicationProvider();
+    const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+    const profile = makeProfile({ full_name: "Maria Borg", first_name: "Maria", email: "maria@example.com", work_authorization: "eu_eea_swiss_citizen" });
+    const job = makeJob({
+      source: "greenhouse",
+      application_method: "ats",
+      application_provider: "greenhouse",
+      application_url: "https://job-boards.greenhouse.io/betsson/jobs/123456",
+      source_job_id: "123456",
+    });
+    const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+    const engine = new ApplicationAutomationEngine();
+    const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+    // Every field on this form now correctly resolves (identity + resume +
+    // the EU-wide question), so the run only still ends manual_required via
+    // GreenhouseApplicationProvider staying NOT_CONFIGURED — never via a
+    // phantom "unanswered question" for the field this whole investigation
+    // started from.
+    assert.equal(outcome.status, "manual_required");
+    assert.match(outcome.status === "manual_required" ? outcome.reason : "", /not configured/i);
+    assert.equal(provider.getStatus(), "NOT_CONFIGURED");
+    assert.ok(!recorder.applicationsUpdates.some((u) => u.status === "submitted"));
+
+    const resolvedEvent = recorder.events.find((e) => e.event_type === "ANSWERS_RESOLVED");
+    const answers = resolvedEvent?.metadata.answers as { fieldId: string; sourceEntryId: string }[] | undefined;
+    const euAnswer = answers?.find((a) => a.fieldId === "question_4");
+    assert.ok(euAnswer, "expected the EU-wide question to be resolved, not left pending");
+    assert.equal(euAnswer?.sourceEntryId, "wa-entry");
   } finally {
     global.fetch = originalFetch;
   }

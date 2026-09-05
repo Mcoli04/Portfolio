@@ -285,3 +285,107 @@ test("normalizeAnswerForField: select field with no declared options can never b
   assert.equal(outcome.ok, false);
   assert.equal((outcome as { reason: string }).reason, "no_declared_options");
 });
+
+// ---- normalizeAnswerForField: EU-wide work-authorization select (delegates to eu-work-authorization.ts) ----
+
+test("normalizeAnswerForField: the confirmed EU-wide select question resolves from profile.work_authorization, entirely bypassing the Answer Library match", () => {
+  const field: FormField = {
+    id: "eu_legal_right",
+    label: "Do you currently have the legal right to work in the European Union?",
+    type: "select",
+    required: true,
+    options: [
+      { label: "Yes", value: "1" },
+      { label: "No", value: "0" },
+    ],
+  };
+  // `resolved` deliberately carries a free-text sentence, like the real
+  // work_authorization Answer Library entry would — it must never be
+  // consulted for this field; only the structured profile fact is used.
+  const outcome = normalizeAnswerForField(
+    field,
+    matched({ answer: "I am an EU/EEA/Swiss citizen and do not require a visa or work permit to work in Malta.", sourceEntryId: "free-text-entry" }),
+    { workAuthorization: "eu_eea_swiss_citizen", workAuthorizationEntryId: "wa-entry-1" }
+  );
+  assert.deepEqual(outcome, { ok: true, value: "1", sourceEntryId: "wa-entry-1" });
+});
+
+test("normalizeAnswerForField: the confirmed EU-wide select question stays unresolved for malta_permit_holder, even with a matched free-text answer on file", () => {
+  const field: FormField = {
+    id: "eu_legal_right",
+    label: "Do you currently have the legal right to work in the European Union?",
+    type: "select",
+    required: true,
+    options: [
+      { label: "Yes", value: "1" },
+      { label: "No", value: "0" },
+    ],
+  };
+  const outcome = normalizeAnswerForField(field, matched({ answer: "I already hold a valid work permit/visa for Malta." }), {
+    workAuthorization: "malta_permit_holder",
+    workAuthorizationEntryId: "wa-entry-1",
+  });
+  assert.equal(outcome.ok, false);
+  assert.equal((outcome as { reason: string }).reason, "not_established_eu_wide");
+});
+
+test("normalizeAnswerForField: a Malta-scoped boolean work-authorization field is unaffected by the new EU-wide select rule", () => {
+  const field: FormField = {
+    id: "f1",
+    label: "Are you authorized to work in this location without sponsorship?",
+    type: "boolean",
+    required: true,
+    trueValue: "Yes",
+    falseValue: "No",
+  };
+  // malta_permit_holder is correctly "Yes" for this Malta-scoped boolean
+  // question — proving the new EU-wide branch (which would reject
+  // malta_permit_holder) was never reached for a boolean field.
+  const outcome = normalizeAnswerForField(field, unmatched(), {
+    workAuthorization: "malta_permit_holder",
+    workAuthorizationEntryId: "wa-entry-1",
+  });
+  assert.deepEqual(outcome, { ok: true, value: "Yes", sourceEntryId: "wa-entry-1" });
+});
+
+test("normalizeAnswerForField: a similarly-worded but non-EU select question (e.g. Malta-scoped) does not hit the EU-specific rule and falls through to ordinary select matching", () => {
+  const field: FormField = {
+    id: "f1",
+    label: "Do you have the legal right to work in Malta?",
+    type: "select",
+    required: true,
+    options: [
+      { label: "Yes", value: "1" },
+      { label: "No", value: "0" },
+    ],
+  };
+  // No Answer Library match for this exact wording — proves it went
+  // through the generic select path (which requires resolved.answer to
+  // match a declared option label), not the structured EU-wide resolver
+  // (which would have resolved malta_permit_holder to "not_established_eu_wide",
+  // a different failure reason).
+  const outcome = normalizeAnswerForField(field, unmatched(), {
+    workAuthorization: "malta_permit_holder",
+    workAuthorizationEntryId: "wa-entry-1",
+  });
+  assert.equal(outcome.ok, false);
+  assert.equal((outcome as { reason: string }).reason, "unmatched");
+});
+
+test("normalizeAnswerForField: the relocation question (Yes/No select) is untouched by the EU-wide rule", () => {
+  const field: FormField = {
+    id: "f1",
+    label: "Would you need to relocate in order to perform this role?",
+    type: "select",
+    required: true,
+    options: [
+      { label: "Yes", value: "1" },
+      { label: "No", value: "0" },
+    ],
+  };
+  const outcome = normalizeAnswerForField(field, matched({ answer: "No", sourceEntryId: "relo-1" }), {
+    workAuthorization: "eu_eea_swiss_citizen",
+    workAuthorizationEntryId: "wa-entry-1",
+  });
+  assert.deepEqual(outcome, { ok: true, value: "0", sourceEntryId: "relo-1" });
+});
