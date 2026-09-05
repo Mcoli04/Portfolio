@@ -5,6 +5,7 @@ import { generateCoverLetter } from "@/lib/ai/cover-letter";
 import { answerQuestion } from "@/lib/ai/answer-questions";
 import { normalizeAnswerForField } from "./answer-normalization";
 import { isIdentityRole, isDocumentRole, resolveIdentityFieldValue, hasDocumentData } from "./identity-fields";
+import { syncPendingQuestions } from "./pending-questions";
 import { getApplicationProvider } from "./provider-registry";
 import { BrowserAutomationApplicationProvider } from "./providers/browser-automation-provider";
 import type { ApplicationProvider, CandidateApplicationData, FormField } from "./types";
@@ -342,6 +343,14 @@ export class ApplicationAutomationEngine {
       }
       // Optional field with no safe normalized answer: silently omitted, never fabricated.
     }
+
+    // Persist the exact set of currently-unresolved required fields (full
+    // FormField metadata — type, declared select options — not just the
+    // label) so a future phase can render a correct answer input, and
+    // reconcile away any previously-pending rows that are no longer
+    // unresolved (resolved since, or no longer on the form). Phase 1 only
+    // — no answering UI or retry route exists yet.
+    await syncPendingQuestions(supabase, application.id, unansweredRequired);
 
     if (unansweredRequired.length > 0) {
       const reasonText = `This employer requires field(s) with no safe answer: ${unansweredRequired

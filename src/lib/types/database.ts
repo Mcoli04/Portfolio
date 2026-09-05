@@ -294,6 +294,29 @@ export interface ApplicationEvent {
   created_at: string;
 }
 
+/**
+ * A required employer question the engine could not safely resolve,
+ * persisted with the full field shape (type, declared select options) so
+ * a future UI can render a correct answer input — never just the
+ * question text. answer_value/answer_source/source_answer_library_id
+ * stay null until a future answering phase exists; Phase 1 never writes
+ * them.
+ */
+export interface ApplicationPendingQuestion {
+  id: string;
+  application_id: string;
+  field_id: string;
+  question_text: string;
+  field_type: "text" | "textarea" | "select" | "file" | "boolean";
+  options: { label: string; value: string }[] | null;
+  required: boolean;
+  answer_value: string | null;
+  answer_source: "application_only" | "answer_library" | null;
+  source_answer_library_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AnswerLibraryEntry {
   id: string;
   user_id: string;

@@ -47,9 +47,10 @@ function createFakeSupabase(
     events?: { event_type: string; metadata: Record<string, unknown> }[];
     librarySelectCallCount?: { count: number };
   },
-  options: { libraryRows?: AnswerLibraryEntry[] } = {}
+  options: { libraryRows?: AnswerLibraryEntry[]; pendingQuestionsTable?: Record<string, unknown>[] } = {}
 ): SupabaseClient {
   const libraryRows = options.libraryRows ?? [];
+  const pendingQuestions = options.pendingQuestionsTable ?? [];
   return {
     from(table: string) {
       if (table === "applications") {
@@ -113,6 +114,63 @@ function createFakeSupabase(
                   Object.entries(filters).every(([key, value]) => (row as unknown as Record<string, unknown>)[key] === value)
                 );
                 onResolve({ data, error: null });
+              },
+            };
+            return builder;
+          },
+        };
+      }
+      if (table === "application_pending_questions") {
+        return {
+          upsert(rows: Record<string, unknown>[]) {
+            for (const row of rows) {
+              const idx = pendingQuestions.findIndex(
+                (r) => r.application_id === row.application_id && r.field_id === row.field_id
+              );
+              if (idx >= 0) {
+                pendingQuestions[idx] = { ...pendingQuestions[idx], ...row, updated_at: "2024-06-01T00:00:00Z" };
+              } else {
+                pendingQuestions.push({
+                  id: `pq-${Math.random().toString(36).slice(2)}`,
+                  answer_value: null,
+                  answer_source: null,
+                  source_answer_library_id: null,
+                  created_at: "2024-06-01T00:00:00Z",
+                  updated_at: "2024-06-01T00:00:00Z",
+                  ...row,
+                });
+              }
+            }
+            return Promise.resolve({ data: null, error: null });
+          },
+          select(_cols: string) {
+            const filters: Record<string, unknown> = {};
+            const builder = {
+              eq(col: string, val: unknown) {
+                filters[col] = val;
+                return builder;
+              },
+              then(onResolve: (result: { data: Record<string, unknown>[]; error: null }) => void) {
+                const data = pendingQuestions.filter((row) => Object.entries(filters).every(([key, value]) => row[key] === value));
+                onResolve({ data, error: null });
+              },
+            };
+            return builder;
+          },
+          delete() {
+            const filters: Record<string, unknown> = {};
+            const builder = {
+              eq(col: string, val: unknown) {
+                filters[col] = val;
+                return builder;
+              },
+              in(col: string, values: unknown[]) {
+                for (let i = pendingQuestions.length - 1; i >= 0; i--) {
+                  const row = pendingQuestions[i];
+                  const matchesEq = Object.entries(filters).every(([k, v]) => row[k] === v);
+                  if (matchesEq && values.includes(row[col])) pendingQuestions.splice(i, 1);
+                }
+                return Promise.resolve({ data: null, error: null });
               },
             };
             return builder;
@@ -1015,4 +1073,232 @@ test("selectProvider(): still cannot select Greenhouse for a real job even after
     application_url: "https://job-boards.greenhouse.io/betsson/jobs/123456",
   });
   assert.equal(selectProvider(job), null);
+});
+
+// ---- Phase 1: application_pending_questions persistence ----
+
+test("engine.run(): persists real Betsson-shaped text question metadata (e.g. 'How big is your affiliate portfolio?') into application_pending_questions", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const pendingQuestionsTable: Record<string, unknown>[] = [];
+  const supabase = createFakeSupabase(recorder, { libraryRows: [], pendingQuestionsTable });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "question_67190346", label: "How big is your affiliate portfolio?", type: "text", required: true }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "manual_required");
+  assert.equal(pendingQuestionsTable.length, 1);
+  const row = pendingQuestionsTable[0];
+  assert.equal(row.application_id, "application-1");
+  assert.equal(row.field_id, "question_67190346");
+  assert.equal(row.question_text, "How big is your affiliate portfolio?");
+  assert.equal(row.field_type, "text");
+  assert.equal(row.options, null);
+  assert.equal(row.required, true);
+});
+
+test("engine.run(): persists real Betsson-shaped select options, preserving 'Yes' -> '1' and 'No' -> '0' exactly", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const pendingQuestionsTable: Record<string, unknown>[] = [];
+  const supabase = createFakeSupabase(recorder, { libraryRows: [], pendingQuestionsTable });
+
+  const form: ApplicationForm = {
+    fields: [
+      {
+        id: "question_relocate",
+        label: "Would you need to relocate in order to perform this role?",
+        type: "select",
+        required: true,
+        options: [
+          { label: "Yes", value: "1" },
+          { label: "No", value: "0" },
+        ],
+      },
+    ],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "manual_required");
+  assert.equal(pendingQuestionsTable.length, 1);
+  const row = pendingQuestionsTable[0];
+  assert.equal(row.field_type, "select");
+  assert.deepEqual(row.options, [
+    { label: "Yes", value: "1" },
+    { label: "No", value: "0" },
+  ]);
+});
+
+test("engine.run(): repeated persistence for the same (application_id, field_id) updates the existing row rather than duplicating it", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const pendingQuestionsTable: Record<string, unknown>[] = [];
+  const supabase = createFakeSupabase(recorder, { libraryRows: [], pendingQuestionsTable });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "question_67190346", label: "How big is your affiliate portfolio?", type: "text", required: true }],
+    requiresHumanVerification: false,
+  };
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+  const engine = new ApplicationAutomationEngine();
+
+  // Simulates the existing admin retry route re-running engine.run() against
+  // the same application — nothing has changed, so the same field is still
+  // unresolved on the second pass.
+  await engine.run({ supabase, application, job, profile, resumeVersion, provider: new FakeFormProvider(form) });
+  await engine.run({ supabase, application, job, profile, resumeVersion, provider: new FakeFormProvider(form) });
+
+  assert.equal(pendingQuestionsTable.length, 1, "must update the existing row, never insert a second one");
+});
+
+test("engine.run(): pending-question rows never carry a fabricated or pre-populated answer", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const pendingQuestionsTable: Record<string, unknown>[] = [];
+  const supabase = createFakeSupabase(recorder, { libraryRows: [], pendingQuestionsTable });
+
+  const form: ApplicationForm = {
+    fields: [
+      { id: "question_67190346", label: "How big is your affiliate portfolio?", type: "text", required: true },
+      {
+        id: "question_relocate",
+        label: "Would you need to relocate in order to perform this role?",
+        type: "select",
+        required: true,
+        options: [
+          { label: "Yes", value: "1" },
+          { label: "No", value: "0" },
+        ],
+      },
+    ],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(pendingQuestionsTable.length, 2);
+  for (const row of pendingQuestionsTable) {
+    assert.equal(row.answer_value, null, `answer_value must stay null for ${row.field_id} — Phase 1 never answers questions`);
+    assert.equal(row.answer_source, null);
+    assert.equal(row.source_answer_library_id, null);
+  }
+});
+
+test("engine.run(): reconciliation removes pending rows for fields that are no longer unresolved", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const pendingQuestionsTable: Record<string, unknown>[] = [];
+  const supabase = createFakeSupabase(recorder, { libraryRows: [], pendingQuestionsTable });
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+  const engine = new ApplicationAutomationEngine();
+
+  const firstForm: ApplicationForm = {
+    fields: [
+      { id: "question_a", label: "How big is your affiliate portfolio?", type: "text", required: true },
+      { id: "question_b", label: "Would you need to relocate in order to perform this role?", type: "select", required: true, options: [{ label: "Yes", value: "1" }, { label: "No", value: "0" }] },
+    ],
+    requiresHumanVerification: false,
+  };
+  await engine.run({ supabase, application, job, profile, resumeVersion, provider: new FakeFormProvider(firstForm) });
+  assert.equal(pendingQuestionsTable.length, 2);
+
+  // On a later re-evaluation, question_a is no longer present on the
+  // employer's form (or was otherwise resolved) — only question_b remains
+  // unresolved. The stale question_a row must be cleaned up, not left as a
+  // permanent blocker.
+  const secondForm: ApplicationForm = {
+    fields: [{ id: "question_b", label: "Would you need to relocate in order to perform this role?", type: "select", required: true, options: [{ label: "Yes", value: "1" }, { label: "No", value: "0" }] }],
+    requiresHumanVerification: false,
+  };
+  await engine.run({ supabase, application, job, profile, resumeVersion, provider: new FakeFormProvider(secondForm) });
+
+  assert.equal(pendingQuestionsTable.length, 1);
+  assert.equal(pendingQuestionsTable[0].field_id, "question_b");
+});
+
+test("engine.run(): a fully-resolved application clears every previously-pending row", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const pendingQuestionsTable: Record<string, unknown>[] = [];
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry], pendingQuestionsTable });
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+  const engine = new ApplicationAutomationEngine();
+
+  const blockedForm: ApplicationForm = {
+    fields: [{ id: "question_a", label: "How big is your affiliate portfolio?", type: "text", required: true }],
+    requiresHumanVerification: false,
+  };
+  await engine.run({ supabase, application, job, profile, resumeVersion, provider: new FakeFormProvider(blockedForm) });
+  assert.equal(pendingQuestionsTable.length, 1);
+
+  // The blocking question is gone from a later fetch of the form (e.g. the
+  // employer removed it) — nothing is unresolved any more.
+  const resolvedForm: ApplicationForm = { fields: [], requiresHumanVerification: false };
+  await engine.run({ supabase, application, job, profile, resumeVersion, provider: new FakeFormProvider(resolvedForm) });
+
+  assert.equal(pendingQuestionsTable.length, 0);
+});
+
+test("engine.run(): existing MANUAL_ACTION_REQUIRED event metadata shape is unchanged by Phase 1 persistence", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const pendingQuestionsTable: Record<string, unknown>[] = [];
+  const supabase = createFakeSupabase(recorder, { libraryRows: [], pendingQuestionsTable });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "question_67190346", label: "How big is your affiliate portfolio?", type: "text", required: true }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob({ application_method: "ats" });
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  const manualEvent = recorder.events.find((e) => e.event_type === "MANUAL_ACTION_REQUIRED");
+  assert.ok(manualEvent);
+  const questions = manualEvent?.metadata.questions as { fieldId: string; questionText: string; reason: string }[] | undefined;
+  assert.deepEqual(questions, [{ fieldId: "question_67190346", questionText: "How big is your affiliate portfolio?", reason: "unmatched" }]);
+
+  const finalUpdate = recorder.applicationsUpdates.at(-1);
+  assert.equal(finalUpdate?.status, "manual_required");
+  assert.equal(finalUpdate?.application_method, "ats");
+  assert.equal(finalUpdate?.application_provider, "fake_form_provider");
 });
