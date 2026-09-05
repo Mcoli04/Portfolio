@@ -481,3 +481,153 @@ test("engine.run(): requiresHumanVerification: false leaves existing answer-reso
   assert.ok(recorder.events.some((e) => e.event_type === "ANSWERS_RESOLVED"));
   assert.ok(!recorder.events.some((e) => e.metadata?.blockedReason === "human_verification_required"));
 });
+
+test("engine.run(): a boolean work-authorization field resolves from profile.work_authorization to the provider's declared true/false values", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization", question_text: "Are you authorized to work here?", answer_text: "I am an EU/EEA/Swiss citizen and do not require a visa or work permit to work in Malta." });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "auth", label: "Are you authorized to work in this location without sponsorship?", type: "boolean", required: true, trueValue: "Yes", falseValue: "No" }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ work_authorization: "eu_eea_swiss_citizen" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, { auth: "Yes" });
+
+  const resolvedEvent = recorder.events.find((e) => e.event_type === "ANSWERS_RESOLVED");
+  const answers = resolvedEvent?.metadata.answers as { fieldId: string; sourceEntryId: string }[] | undefined;
+  assert.equal(answers?.[0]?.sourceEntryId, "wa-entry");
+});
+
+test("engine.run(): the SAME fact answered correctly for an opposite-polarity (sponsorship-phrased) boolean question", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry] });
+
+  // Same profile fact (EU/EEA/Swiss citizen) as the previous test, but this
+  // field is phrased the opposite way — "true" here means "requires
+  // sponsorship" — so the correct answer must flip to "No".
+  const form: ApplicationForm = {
+    fields: [{ id: "sponsor", label: "Will you now or in the future require sponsorship?", type: "boolean", required: true, trueValue: "Yes", falseValue: "No" }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ work_authorization: "eu_eea_swiss_citizen" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, { sponsor: "No" });
+});
+
+test("engine.run(): a boolean question with no safe structured mapping (e.g. relocation) stops before submission, even with a matching free-text library entry", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const relocationEntry = makeLibraryEntry({ id: "relo-entry", question_key: "relocation", question_text: "Are you willing to relocate?", answer_text: "Open to relocating within Malta." });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry, relocationEntry] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "relocate", label: "Are you willing to relocate?", type: "boolean", required: true, trueValue: "Yes", falseValue: "No" }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ work_authorization: "eu_eea_swiss_citizen" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "manual_required");
+  assert.equal(provider.submitCallCount, 0, "a boolean question with no safe structured mapping must never be auto-answered");
+  assert.ok(!recorder.events.some((e) => e.event_type === "ANSWERS_RESOLVED"));
+});
+
+test("engine.run(): a boolean field with no declared true/false representation stops before submission", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry] });
+
+  const form: ApplicationForm = {
+    // trueValue/falseValue intentionally omitted — the provider never declared its representation.
+    fields: [{ id: "auth", label: "Are you authorized to work in this location without sponsorship?", type: "boolean", required: true }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile({ work_authorization: "eu_eea_swiss_citizen" });
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "manual_required");
+  assert.equal(provider.submitCallCount, 0);
+});
+
+test("engine.run(): a select field is only answered with the provider's own declared option value, never fuzzily matched", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const noticeEntry = makeLibraryEntry({ id: "notice-entry", question_key: "notice_period", question_text: "What is your notice period?", answer_text: "1 Month" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [noticeEntry] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "notice", label: "What is your notice period?", type: "select", required: true, options: ["2 weeks", "1 month", "3 months"] }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  // "1 Month" (our stored text) must become the PROVIDER's declared literal
+  // value "1 month" (note the case difference), never sent verbatim as-is.
+  assert.deepEqual(provider.lastCandidate?.answers, { notice: "1 month" });
+});
+
+test("engine.run(): a select field whose options don't match our stored answer stops before submission, never picks the closest option", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const noticeEntry = makeLibraryEntry({ id: "notice-entry", question_key: "notice_period", question_text: "What is your notice period?", answer_text: "6 weeks" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [noticeEntry] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "notice", label: "What is your notice period?", type: "select", required: true, options: ["2 weeks", "1 month", "3 months"] }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "manual_required");
+  assert.equal(provider.submitCallCount, 0);
+});

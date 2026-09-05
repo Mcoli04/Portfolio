@@ -5,7 +5,18 @@ export interface FormField {
   label: string;
   type: "text" | "textarea" | "select" | "file" | "boolean";
   required: boolean;
+  /** For type "select": the exact literal values this provider's form accepts. */
   options?: string[];
+  /**
+   * For type "boolean" only: the exact literal values THIS provider's
+   * form/API expects for true/false (e.g. "Yes"/"No", "true"/"false", a
+   * specific option id). A boolean field with either value undeclared can
+   * never be auto-answered — there is no universal "Yes"/"No" to fall
+   * back to, and inventing one would mean guessing at a specific
+   * employer's contract instead of using what they actually declared.
+   */
+  trueValue?: string;
+  falseValue?: string;
 }
 
 export interface ApplicationForm {

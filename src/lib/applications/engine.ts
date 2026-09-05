@@ -3,6 +3,7 @@ import type { Application, AnswerLibraryEntry, Job, Profile, ResumeVersion } fro
 import { tailorCvForJob } from "@/lib/ai/cv-tailoring";
 import { generateCoverLetter } from "@/lib/ai/cover-letter";
 import { answerQuestion } from "@/lib/ai/answer-questions";
+import { normalizeAnswerForField } from "./answer-normalization";
 import { getApplicationProvider } from "./provider-registry";
 import { BrowserAutomationApplicationProvider } from "./providers/browser-automation-provider";
 import type { ApplicationProvider, CandidateApplicationData, FormField } from "./types";
@@ -270,18 +271,30 @@ export class ApplicationAutomationEngine {
       .returns<AnswerLibraryEntry[]>();
     const library = libraryRows ?? [];
 
+    // Looked up once, directly by key — not via answerQuestion()'s per-field
+    // regex classification of each field's label, which routes many real
+    // sponsorship phrasings to a different key ("sponsorship_requirement").
+    // Boolean work-authorization resolution always cites this entry (if
+    // any) as its audit-trail source, regardless of how a given field is
+    // worded — the fact itself always comes from profile.work_authorization.
+    const workAuthorizationEntry = library.find((e) => e.question_key === "work_authorization" && e.verified);
+
     const resolved: { field: FormField; answer: string; sourceEntryId: string }[] = [];
     const unansweredRequired: { field: FormField; reason: string }[] = [];
 
     for (const field of form.fields) {
       if (field.type === "file") continue; // resume/cover letter — handled by uploadResume/uploadCoverLetter, not a screening question
       const result = await answerQuestion(field.label, library);
-      if (result.answer !== null && result.sourceEntryId) {
-        resolved.push({ field, answer: result.answer, sourceEntryId: result.sourceEntryId });
+      const normalized = normalizeAnswerForField(field, result, {
+        workAuthorization: profile.work_authorization,
+        workAuthorizationEntryId: workAuthorizationEntry?.id ?? null,
+      });
+      if (normalized.ok) {
+        resolved.push({ field, answer: normalized.value, sourceEntryId: normalized.sourceEntryId });
       } else if (field.required) {
-        unansweredRequired.push({ field, reason: result.reason ?? "unmatched" });
+        unansweredRequired.push({ field, reason: normalized.reason });
       }
-      // Optional field with no safe verified answer: silently omitted, never fabricated.
+      // Optional field with no safe normalized answer: silently omitted, never fabricated.
     }
 
     if (unansweredRequired.length > 0) {
