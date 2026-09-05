@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApplicationAutomationEngine, selectProvider } from "./engine";
 import { BrowserAutomationApplicationProvider } from "./providers/browser-automation-provider";
+import { GreenhouseApplicationProvider } from "./providers/greenhouse-provider";
 import { BaseApplicationProvider } from "./providers/base";
 import type { ApplicationForm, CandidateApplicationData, SubmissionResult } from "./types";
 import type { Application, AnswerLibraryEntry, Job, Profile, ResumeVersion } from "@/lib/types/database";
@@ -842,4 +843,83 @@ test("engine.run(): an optional file field with no recognized role is omitted, s
 
   assert.equal(outcome.status, "submitted");
   assert.deepEqual(provider.lastCandidate?.answers, {});
+});
+
+test("engine.run(): the real GreenhouseApplicationProvider's getApplicationForm() drives the full field-resolution pipeline end to end, but submission stays impossible", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const workAuthEntry = makeLibraryEntry({ id: "wa-entry", question_key: "work_authorization" });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [workAuthEntry] });
+
+  const originalFetch = global.fetch;
+  global.fetch = (async (url: string) => {
+    assert.equal(url, "https://boards-api.greenhouse.io/v1/boards/betsson/jobs/123456?questions=true");
+    return {
+      ok: true,
+      json: async () => ({
+        id: 123456,
+        questions: [
+          { id: 1, label: "First Name", required: true, fields: [{ name: "first_name", type: "input_text" }] },
+          { id: 2, label: "Email", required: true, fields: [{ name: "email", type: "input_text" }] },
+          {
+            id: 3,
+            label: "Resume",
+            required: true,
+            fields: [
+              { name: "resume", type: "input_file" },
+              { name: "resume_text", type: "textarea" },
+            ],
+          },
+          {
+            id: 4,
+            label: "Are you authorized to work in this location without sponsorship?",
+            required: true,
+            fields: [{ name: "question_4", type: "multi_value_single_select", values: [{ label: "Yes", value: 1 }, { label: "No", value: 2 }] }],
+          },
+        ],
+      }),
+    } as Response;
+  }) as typeof fetch;
+
+  try {
+    const provider = new GreenhouseApplicationProvider();
+    const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+    const profile = makeProfile({ full_name: "Maria Borg", email: "maria@example.com", work_authorization: "eu_eea_swiss_citizen" });
+    const job = makeJob({
+      source: "greenhouse",
+      application_method: "ats",
+      application_provider: "greenhouse",
+      application_url: "https://job-boards.greenhouse.io/betsson/jobs/123456",
+      source_job_id: "123456",
+    });
+    const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+    const engine = new ApplicationAutomationEngine();
+    const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+    // The multi_value_single_select "Yes"/"No" question is NOT a
+    // work-authorization boolean in our model (it's type "select", not
+    // "boolean" — Greenhouse's yes/no here is a two-option select), so it
+    // has no verified answer_library text matching "Yes" or "No" exactly
+    // and correctly can't auto-resolve — proving the pipeline genuinely
+    // ran real field resolution against real-shaped data rather than
+    // trivially succeeding.
+    assert.equal(outcome.status, "manual_required");
+    assert.equal(provider.getStatus(), "NOT_CONFIGURED");
+
+    // Even if every field had resolved, isConfigured() staying false means
+    // submission was never reachable regardless.
+    assert.ok(!recorder.applicationsUpdates.some((u) => u.status === "submitted"));
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("selectProvider(): still cannot select Greenhouse for a real job even after getApplicationForm() is implemented — isConfigured() governs, not form availability", () => {
+  const job = makeJob({
+    source: "greenhouse",
+    application_method: "ats",
+    application_provider: "greenhouse",
+    application_url: "https://job-boards.greenhouse.io/betsson/jobs/123456",
+  });
+  assert.equal(selectProvider(job), null);
 });
