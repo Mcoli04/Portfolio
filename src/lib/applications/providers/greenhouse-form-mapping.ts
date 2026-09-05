@@ -1,4 +1,4 @@
-import type { ApplicationForm, FormField, FormFieldRole } from "../types";
+import type { ApplicationForm, FormField, FormFieldOption, FormFieldRole } from "../types";
 
 /**
  * Shapes returned by Greenhouse's public, unauthenticated Job Board API
@@ -57,10 +57,12 @@ const STANDARD_FIELD_ROLES: Record<string, FormFieldRole> = {
 /**
  * Maps one Greenhouse field to a FormField, or null when this field must
  * never become an answerable FormField on its own:
- *   - "resume_text" (Greenhouse's free-text alternative to uploading a
- *     resume file) is always absorbed into the "resume" role field
- *     emitted for its sibling "resume" field — it must never surface as
- *     its own screening question asking the candidate to paste their CV.
+ *   - "resume_text" and "cover_letter_text" (Greenhouse's free-text
+ *     alternatives to uploading a resume/cover-letter file) are always
+ *     absorbed into the "resume"/"cover_letter" role field emitted for
+ *     their sibling "resume"/"cover_letter" field — they must never
+ *     surface as their own screening question asking the candidate to
+ *     paste their CV or cover letter.
  *   - "input_hidden" fields are never something a candidate is actually
  *     asked to fill in; we have no safe value to put there and never
  *     fabricate one.
@@ -70,7 +72,7 @@ const STANDARD_FIELD_ROLES: Record<string, FormFieldRole> = {
  * caller (mapGreenhouseQuestionToFormFields), not here.
  */
 function mapGreenhouseFieldToFormField(field: GreenhouseQuestionField, question: GreenhouseQuestion): FormField | null {
-  if (field.name === "resume_text") return null;
+  if (field.name === "resume_text" || field.name === "cover_letter_text") return null;
   if (field.type === "input_hidden") return null;
 
   const standardRole = STANDARD_FIELD_ROLES[field.name];
@@ -93,9 +95,9 @@ function mapGreenhouseFieldToFormField(field: GreenhouseQuestionField, question:
       // letter (role stays undefined): unsupported — never synthesized.
       return { id: field.name, label: question.label, type: "file", required: question.required };
     case "multi_value_single_select": {
-      const options = (field.values ?? [])
-        .map((v) => v.label)
-        .filter((label): label is string => typeof label === "string" && label.length > 0);
+      const options: FormFieldOption[] = (field.values ?? [])
+        .filter((v): v is GreenhouseQuestionValue => typeof v.label === "string" && v.label.length > 0)
+        .map((v) => ({ label: v.label, value: String(v.value) }));
       // No provider-declared options at all: nothing safe to offer. Falls
       // through to the caller's required/unsupported handling.
       if (options.length === 0) return null;

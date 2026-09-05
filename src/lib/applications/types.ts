@@ -18,6 +18,18 @@ export type FormFieldRole =
   | "cover_letter"
   | "screening_question";
 
+/**
+ * One option a "select" field accepts. `label` is the human-readable text
+ * (matched against a resolved answer); `value` is the provider's own
+ * submission-time value for that option — often different from the label
+ * (e.g. Greenhouse's { label: "Yes", value: 1 }) and always sourced from
+ * the provider's own declaration, never invented.
+ */
+export interface FormFieldOption {
+  label: string;
+  value: string;
+}
+
 export interface FormField {
   id: string;
   label: string;
@@ -25,8 +37,8 @@ export interface FormField {
   required: boolean;
   /** Defaults to "screening_question" when omitted. */
   role?: FormFieldRole;
-  /** For type "select": the exact literal values this provider's form accepts. */
-  options?: string[];
+  /** For type "select": the exact options this provider's form accepts. */
+  options?: FormFieldOption[];
   /**
    * For type "boolean" only: the exact literal values THIS provider's
    * form/API expects for true/false (e.g. "Yes"/"No", "true"/"false", a

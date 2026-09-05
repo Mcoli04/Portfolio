@@ -122,9 +122,11 @@ export function normalizeAnswerForField(
       return { ok: false, reason: "no_declared_options" };
     }
     const normalized = resolved.answer.trim().toLowerCase();
-    const match = field.options.find((option) => option.trim().toLowerCase() === normalized);
+    const match = field.options.find((option) => option.label.trim().toLowerCase() === normalized);
     if (!match) return { ok: false, reason: "no_matching_option" };
-    return { ok: true, value: match, sourceEntryId: resolved.sourceEntryId };
+    // The provider's own submission-time value, never the display label —
+    // e.g. Greenhouse's { label: "Yes", value: "1" } resolves to "1".
+    return { ok: true, value: match.value, sourceEntryId: resolved.sourceEntryId };
   }
 
   return { ok: false, reason: "unsupported_field_type" };

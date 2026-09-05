@@ -225,8 +225,18 @@ test("normalizeAnswerForField: boolean field with unset authorization is never g
 
 // ---- normalizeAnswerForField: select ----
 
-test("normalizeAnswerForField: select field accepts only an exact case/whitespace-insensitive match against declared options, and returns the provider's literal option value", () => {
-  const field: FormField = { id: "f1", label: "Notice period", type: "select", required: true, options: ["2 weeks", "1 Month", "3 months"] };
+test("normalizeAnswerForField: select field accepts only an exact case/whitespace-insensitive match against declared option labels, and returns the provider's own option value", () => {
+  const field: FormField = {
+    id: "f1",
+    label: "Notice period",
+    type: "select",
+    required: true,
+    options: [
+      { label: "2 weeks", value: "2 weeks" },
+      { label: "1 Month", value: "1 Month" },
+      { label: "3 months", value: "3 months" },
+    ],
+  };
   const outcome = normalizeAnswerForField(field, matched({ answer: "  1 month  ", sourceEntryId: "notice-1" }), {
     workAuthorization: null,
     workAuthorizationEntryId: null,
@@ -234,8 +244,36 @@ test("normalizeAnswerForField: select field accepts only an exact case/whitespac
   assert.deepEqual(outcome, { ok: true, value: "1 Month", sourceEntryId: "notice-1" });
 });
 
+test("normalizeAnswerForField: select field returns the provider's declared value even when it differs from the label (e.g. Greenhouse's numeric option values)", () => {
+  const field: FormField = {
+    id: "f1",
+    label: "Are you willing to relocate?",
+    type: "select",
+    required: true,
+    options: [
+      { label: "Yes", value: "1" },
+      { label: "No", value: "0" },
+    ],
+  };
+  const outcome = normalizeAnswerForField(field, matched({ answer: "Yes", sourceEntryId: "relo-1" }), {
+    workAuthorization: null,
+    workAuthorizationEntryId: null,
+  });
+  assert.deepEqual(outcome, { ok: true, value: "1", sourceEntryId: "relo-1" });
+});
+
 test("normalizeAnswerForField: select field with no matching option is never fuzzily matched", () => {
-  const field: FormField = { id: "f1", label: "Notice period", type: "select", required: true, options: ["2 weeks", "1 month", "3 months"] };
+  const field: FormField = {
+    id: "f1",
+    label: "Notice period",
+    type: "select",
+    required: true,
+    options: [
+      { label: "2 weeks", value: "2 weeks" },
+      { label: "1 month", value: "1 month" },
+      { label: "3 months", value: "3 months" },
+    ],
+  };
   const outcome = normalizeAnswerForField(field, matched({ answer: "6 weeks" }), { workAuthorization: null, workAuthorizationEntryId: null });
   assert.equal(outcome.ok, false);
   assert.equal((outcome as { reason: string }).reason, "no_matching_option");

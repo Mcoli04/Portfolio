@@ -82,6 +82,56 @@ test("mapGreenhouseQuestionToFormFields: cover_letter maps to role 'cover_letter
   assert.equal(field.type, "file");
 });
 
+// ---- cover_letter / cover_letter_text pairing (mirrors resume / resume_text) ----
+
+test("mapGreenhouseQuestionToFormFields: a Cover Letter question with both cover_letter (input_file) and cover_letter_text (textarea) fields emits exactly one role:'cover_letter' field", () => {
+  const q = question({
+    id: 22,
+    label: "Cover Letter",
+    required: true,
+    fields: [
+      { name: "cover_letter", type: "input_file" },
+      { name: "cover_letter_text", type: "textarea" },
+    ],
+  });
+  const fields = mapGreenhouseQuestionToFormFields(q);
+  assert.equal(fields.length, 1, "cover_letter_text must never become its own screening question");
+  assert.equal(fields[0].id, "cover_letter");
+  assert.equal(fields[0].role, "cover_letter");
+  assert.equal(fields[0].type, "file");
+  assert.equal(fields[0].required, true);
+});
+
+test("mapGreenhouseQuestionToFormFields: an optional Cover Letter question with both fields still emits exactly one optional role:'cover_letter' field", () => {
+  const q = question({
+    id: 23,
+    label: "Cover Letter",
+    required: false,
+    fields: [
+      { name: "cover_letter", type: "input_file" },
+      { name: "cover_letter_text", type: "textarea" },
+    ],
+  });
+  const fields = mapGreenhouseQuestionToFormFields(q);
+  assert.equal(fields.length, 1);
+  assert.equal(fields[0].role, "cover_letter");
+  assert.equal(fields[0].required, false);
+});
+
+test("mapGreenhouseQuestionToFormFields: cover_letter_text alone (no sibling cover_letter field) is still never a screening question — a required lone cover_letter_text becomes an unsupported placeholder", () => {
+  const q = question({ id: 24, required: true, fields: [{ name: "cover_letter_text", type: "textarea" }] });
+  const fields = mapGreenhouseQuestionToFormFields(q);
+  assert.equal(fields.length, 1);
+  assert.equal(fields[0].type, "select");
+  assert.equal(fields[0].options, undefined, "must never be answerable — no options declared");
+  assert.equal(fields[0].role, undefined);
+});
+
+test("mapGreenhouseQuestionToFormFields: cover_letter_text alone, optional, produces no fields at all", () => {
+  const q = question({ required: false, fields: [{ name: "cover_letter_text", type: "textarea" }] });
+  assert.deepEqual(mapGreenhouseQuestionToFormFields(q), []);
+});
+
 test("mapGreenhouseQuestionToFormFields: resume_text alone (no sibling resume field) is still never a screening question — a required lone resume_text becomes an unsupported placeholder", () => {
   const q = question({ id: 21, required: true, fields: [{ name: "resume_text", type: "textarea" }] });
   const fields = mapGreenhouseQuestionToFormFields(q);
@@ -98,7 +148,10 @@ test("mapGreenhouseQuestionToFormFields: resume_text alone, optional, produces n
 
 // ---- multi_value_single_select ----
 
-test("mapGreenhouseQuestionToFormFields: multi_value_single_select options come only from provider-declared values", () => {
+test("mapGreenhouseQuestionToFormFields: multi_value_single_select options come only from provider-declared values, preserving the real label/value pairing exactly", () => {
+  // The exact shape confirmed against the live Betsson board: numeric
+  // Greenhouse option values, which must survive as strings, never be
+  // discarded in favor of the label alone.
   const q = question({
     id: 30,
     label: "Are you willing to relocate?",
@@ -109,7 +162,7 @@ test("mapGreenhouseQuestionToFormFields: multi_value_single_select options come 
         type: "multi_value_single_select",
         values: [
           { label: "Yes", value: 1 },
-          { label: "No", value: 2 },
+          { label: "No", value: 0 },
         ],
       },
     ],
@@ -117,7 +170,10 @@ test("mapGreenhouseQuestionToFormFields: multi_value_single_select options come 
   const [field] = mapGreenhouseQuestionToFormFields(q);
   assert.equal(field.id, "question_30");
   assert.equal(field.type, "select");
-  assert.deepEqual(field.options, ["Yes", "No"]);
+  assert.deepEqual(field.options, [
+    { label: "Yes", value: "1" },
+    { label: "No", value: "0" },
+  ]);
   assert.equal(field.role, undefined, "a custom question defaults to screening_question");
 });
 
@@ -291,4 +347,88 @@ test("extractGreenhouseBoardToken: returns null for a malformed URL or no URL at
 
 test("extractGreenhouseBoardToken: returns null when the path has no token segment", () => {
   assert.equal(extractGreenhouseBoardToken("https://job-boards.greenhouse.io/"), null);
+});
+
+// ---- golden fixture: the real Betsson-shaped response ----
+
+test("mapGreenhouseFormResponse: golden Betsson-shaped fixture maps identity, resume pair, cover-letter pair, custom text question, and single-select exactly", () => {
+  const form = mapGreenhouseFormResponse({
+    id: 123456,
+    questions: [
+      { id: 1, label: "First Name", required: true, fields: [{ name: "first_name", type: "input_text" }] },
+      { id: 2, label: "Last Name", required: true, fields: [{ name: "last_name", type: "input_text" }] },
+      { id: 3, label: "Email", required: true, fields: [{ name: "email", type: "input_text" }] },
+      { id: 4, label: "Phone", required: true, fields: [{ name: "phone", type: "input_text" }] },
+      {
+        id: 5,
+        label: "Resume/CV",
+        required: true,
+        fields: [
+          { name: "resume", type: "input_file" },
+          { name: "resume_text", type: "textarea" },
+        ],
+      },
+      {
+        id: 6,
+        label: "Cover Letter",
+        required: false,
+        fields: [
+          { name: "cover_letter", type: "input_file" },
+          { name: "cover_letter_text", type: "textarea" },
+        ],
+      },
+      {
+        id: 7,
+        label: "Are you willing to relocate?",
+        required: true,
+        fields: [
+          {
+            name: "question_67190346",
+            type: "multi_value_single_select",
+            values: [
+              { label: "Yes", value: 1 },
+              { label: "No", value: 0 },
+            ],
+          },
+        ],
+      },
+      {
+        id: 8,
+        label: "What is your notice period?",
+        required: false,
+        fields: [{ name: "question_67190347", type: "input_text" }],
+      },
+    ],
+  });
+
+  assert.equal(form.requiresHumanVerification, false);
+  assert.equal(form.fields.length, 8, "one field per question — no phantom resume_text/cover_letter_text screening questions");
+
+  const byId = Object.fromEntries(form.fields.map((f) => [f.id, f]));
+
+  assert.equal(byId.first_name.role, "first_name");
+  assert.equal(byId.last_name.role, "last_name");
+  assert.equal(byId.email.role, "email");
+  assert.equal(byId.phone.role, "phone");
+  assert.equal(byId.resume.role, "resume");
+  assert.equal(byId.resume.type, "file");
+  assert.equal(byId.resume.required, true);
+  assert.equal(byId.cover_letter.role, "cover_letter");
+  assert.equal(byId.cover_letter.type, "file");
+  assert.equal(byId.cover_letter.required, false);
+  assert.equal(byId.resume_text, undefined, "resume_text must never appear as its own field");
+  assert.equal(byId.cover_letter_text, undefined, "cover_letter_text must never appear as its own field");
+
+  const relocate = byId.question_67190346;
+  assert.equal(relocate.type, "select");
+  assert.equal(relocate.role, undefined);
+  assert.deepEqual(relocate.options, [
+    { label: "Yes", value: "1" },
+    { label: "No", value: "0" },
+  ]);
+
+  const notice = byId.question_67190347;
+  assert.equal(notice.type, "text");
+  assert.equal(notice.required, false);
+  assert.equal(notice.role, undefined);
 });

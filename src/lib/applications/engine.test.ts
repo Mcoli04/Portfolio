@@ -591,7 +591,19 @@ test("engine.run(): a select field is only answered with the provider's own decl
   const supabase = createFakeSupabase(recorder, { libraryRows: [noticeEntry] });
 
   const form: ApplicationForm = {
-    fields: [{ id: "notice", label: "What is your notice period?", type: "select", required: true, options: ["2 weeks", "1 month", "3 months"] }],
+    fields: [
+      {
+        id: "notice",
+        label: "What is your notice period?",
+        type: "select",
+        required: true,
+        options: [
+          { label: "2 weeks", value: "2 weeks" },
+          { label: "1 month", value: "1 month" },
+          { label: "3 months", value: "3 months" },
+        ],
+      },
+    ],
     requiresHumanVerification: false,
   };
   const provider = new FakeFormProvider(form);
@@ -616,7 +628,19 @@ test("engine.run(): a select field whose options don't match our stored answer s
   const supabase = createFakeSupabase(recorder, { libraryRows: [noticeEntry] });
 
   const form: ApplicationForm = {
-    fields: [{ id: "notice", label: "What is your notice period?", type: "select", required: true, options: ["2 weeks", "1 month", "3 months"] }],
+    fields: [
+      {
+        id: "notice",
+        label: "What is your notice period?",
+        type: "select",
+        required: true,
+        options: [
+          { label: "2 weeks", value: "2 weeks" },
+          { label: "1 month", value: "1 month" },
+          { label: "3 months", value: "3 months" },
+        ],
+      },
+    ],
     requiresHumanVerification: false,
   };
   const provider = new FakeFormProvider(form);
@@ -909,6 +933,75 @@ test("engine.run(): the real GreenhouseApplicationProvider's getApplicationForm(
     // Even if every field had resolved, isConfigured() staying false means
     // submission was never reachable regardless.
     assert.ok(!recorder.applicationsUpdates.some((u) => u.status === "submitted"));
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("engine.run(): the real GreenhouseApplicationProvider correctly satisfies a Betsson-shaped resume+cover-letter pairing without falsely forcing manual_required", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const supabase = createFakeSupabase(recorder, { libraryRows: [] });
+
+  const originalFetch = global.fetch;
+  global.fetch = (async () => ({
+    ok: true,
+    json: async () => ({
+      id: 123456,
+      questions: [
+        { id: 1, label: "First Name", required: true, fields: [{ name: "first_name", type: "input_text" }] },
+        { id: 2, label: "Last Name", required: true, fields: [{ name: "last_name", type: "input_text" }] },
+        { id: 3, label: "Email", required: true, fields: [{ name: "email", type: "input_text" }] },
+        { id: 4, label: "Phone", required: true, fields: [{ name: "phone", type: "input_text" }] },
+        {
+          id: 5,
+          label: "Resume/CV",
+          required: true,
+          fields: [
+            { name: "resume", type: "input_file" },
+            { name: "resume_text", type: "textarea" },
+          ],
+        },
+        {
+          id: 6,
+          label: "Cover Letter",
+          required: true,
+          fields: [
+            { name: "cover_letter", type: "input_file" },
+            { name: "cover_letter_text", type: "textarea" },
+          ],
+        },
+      ],
+    }),
+  })) as unknown as typeof fetch;
+
+  try {
+    const provider = new GreenhouseApplicationProvider();
+    const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+    const profile = makeProfile({ full_name: "Maria Borg", first_name: "Maria", last_name: "Borg", email: "maria@example.com", phone: "+356 7900 0000" });
+    const job = makeJob({
+      source: "greenhouse",
+      application_method: "ats",
+      application_provider: "greenhouse",
+      application_url: "https://job-boards.greenhouse.io/betsson/jobs/123456",
+      source_job_id: "123456",
+    });
+    const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+    const engine = new ApplicationAutomationEngine();
+    const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+    // Everything on this form is satisfiable (identity fields from the
+    // profile, resume/cover-letter from the already-prepared documents),
+    // so field resolution itself must succeed cleanly — the run can only
+    // still end in manual_required via GreenhouseApplicationProvider
+    // staying NOT_CONFIGURED (BaseApplicationProvider's own safety check),
+    // never via a phantom "unanswered question" caused by the
+    // cover_letter_text bug. The reason text below is what proves which
+    // one actually happened.
+    assert.equal(outcome.status, "manual_required");
+    assert.match(outcome.status === "manual_required" ? outcome.reason : "", /not configured/i);
+    assert.equal(provider.getStatus(), "NOT_CONFIGURED");
+    assert.ok(!recorder.applicationsUpdates.some((u) => u.status === "submitted"), "isConfigured() still blocks any real submission");
   } finally {
     global.fetch = originalFetch;
   }
