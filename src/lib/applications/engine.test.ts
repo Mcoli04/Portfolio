@@ -44,6 +44,7 @@ function createFakeSupabase(
     applicationsUpdates: Record<string, unknown>[];
     notifications: Record<string, unknown>[];
     events?: { event_type: string; metadata: Record<string, unknown> }[];
+    librarySelectCallCount?: { count: number };
   },
   options: { libraryRows?: AnswerLibraryEntry[] } = {}
 ): SupabaseClient {
@@ -96,6 +97,7 @@ function createFakeSupabase(
       if (table === "answer_library") {
         return {
           select(_cols: string) {
+            if (recorder.librarySelectCallCount) recorder.librarySelectCallCount.count++;
             const filters: Record<string, unknown> = {};
             const builder = {
               eq(col: string, val: unknown) {
@@ -397,4 +399,85 @@ test("engine.run(): a hard-blocked EEO/legal question is never auto-answered eve
   const manualEvent = recorder.events.find((e) => e.event_type === "MANUAL_ACTION_REQUIRED");
   const questions = manualEvent?.metadata.questions as { reason: string }[] | undefined;
   assert.ok(questions?.some((q) => q.reason === "hard_blocked"));
+});
+
+test("engine.run(): requiresHumanVerification stops the run before the Answer Library is fetched, before answering, and before submission — channel preserved", async () => {
+  const recorder = {
+    applicationsUpdates: [] as Record<string, unknown>[],
+    notifications: [] as Record<string, unknown>[],
+    events: [] as { event_type: string; metadata: Record<string, unknown> }[],
+    librarySelectCallCount: { count: 0 },
+  };
+  // A verified entry that WOULD resolve the field below if the engine ever
+  // got as far as calling answerQuestion() for it — proving the guard stops
+  // things before that point, not just that this particular field happens
+  // to be unanswerable.
+  const wouldMatchEntry = makeLibraryEntry({ id: "would-match", question_key: "notice_period", question_text: "What is your notice period?", answer_text: "One month." });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [wouldMatchEntry] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "notice", label: "What is your notice period?", type: "text", required: true }],
+    requiresHumanVerification: true,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob({ application_method: "ats" });
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "manual_required");
+  assert.equal(provider.submitCallCount, 0, "submitApplication() must never be called when human verification is required");
+  assert.equal(provider.lastCandidate, null, "no candidate/answers should ever be built for this run");
+  assert.equal(recorder.librarySelectCallCount.count, 0, "the Answer Library must never be fetched when human verification is required");
+
+  assert.ok(!recorder.events.some((e) => e.event_type === "ANSWERS_RESOLVED"), "no ANSWERS_RESOLVED event when human verification blocked the run");
+  assert.ok(!recorder.events.some((e) => e.event_type === "QUESTIONS_COMPLETED"), "no QUESTIONS_COMPLETED event when a form was inspected but blocked");
+
+  const finalUpdate = recorder.applicationsUpdates.at(-1);
+  assert.equal(finalUpdate?.status, "manual_required");
+  assert.equal(finalUpdate?.manual_required, true);
+  // The provider/channel that was genuinely inspected is preserved, not
+  // reset to manual/null — a real form was returned by this provider.
+  assert.equal(finalUpdate?.application_method, "ats");
+  assert.equal(finalUpdate?.application_provider, "fake_form_provider");
+
+  const manualEvent = recorder.events.find((e) => e.event_type === "MANUAL_ACTION_REQUIRED");
+  assert.ok(manualEvent, "expected a MANUAL_ACTION_REQUIRED audit event");
+  assert.equal(manualEvent?.metadata.blockedReason, "human_verification_required");
+});
+
+test("engine.run(): requiresHumanVerification: false leaves existing answer-resolution behavior unchanged", async () => {
+  const recorder = {
+    applicationsUpdates: [] as Record<string, unknown>[],
+    notifications: [] as Record<string, unknown>[],
+    events: [] as { event_type: string; metadata: Record<string, unknown> }[],
+    librarySelectCallCount: { count: 0 },
+  };
+  const verifiedEntry = makeLibraryEntry({ id: "verified-notice", question_key: "notice_period", question_text: "What is your notice period?", answer_text: "One month." });
+  const supabase = createFakeSupabase(recorder, { libraryRows: [verifiedEntry] });
+
+  const form: ApplicationForm = {
+    fields: [{ id: "notice", label: "What is your notice period?", type: "text", required: true }],
+    requiresHumanVerification: false,
+  };
+  const provider = new FakeFormProvider(form);
+
+  const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+  const profile = makeProfile();
+  const job = makeJob();
+  const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+  const outcome = await engine.run({ supabase, application, job, profile, resumeVersion, provider });
+
+  assert.equal(outcome.status, "submitted");
+  assert.equal(provider.submitCallCount, 1);
+  assert.equal(recorder.librarySelectCallCount.count, 1, "the Answer Library is fetched exactly as before when human verification isn't required");
+  assert.deepEqual(provider.lastCandidate?.answers, { notice: "One month." });
+  assert.ok(recorder.events.some((e) => e.event_type === "ANSWERS_RESOLVED"));
+  assert.ok(!recorder.events.some((e) => e.metadata?.blockedReason === "human_verification_required"));
 });

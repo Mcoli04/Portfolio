@@ -248,6 +248,20 @@ export class ApplicationAutomationEngine {
       return { blocked: false, answers: {} };
     }
 
+    if (form.requiresHumanVerification) {
+      // The provider detected something it must not attempt to bypass
+      // (CAPTCHA, login wall, MFA) — stop immediately, before the Answer
+      // Library is even fetched, so no answer can be resolved and no
+      // candidate/submission is ever built for this run.
+      const reasonText =
+        "This employer's application requires manual human verification (CAPTCHA, login, or MFA) and cannot be completed automatically.";
+      await this.markManual(supabase, application, reasonText, {
+        channel: { method: job.application_method, provider: provider.key },
+        metadata: { blockedReason: "human_verification_required" },
+      });
+      return { blocked: true, outcome: { status: "manual_required", reason: reasonText } };
+    }
+
     const { data: libraryRows } = await supabase
       .from("answer_library")
       .select("*")
