@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ApplicationPendingQuestion } from "@/lib/types/database";
 import type { FormField } from "./types";
 
 /**
@@ -58,4 +59,21 @@ export async function syncPendingQuestions(
       .eq("application_id", applicationId)
       .in("field_id", staleFieldIds);
   }
+}
+
+export async function getApplicationOnlyAnswers(
+  supabase: SupabaseClient,
+  applicationId: string
+): Promise<ApplicationPendingQuestion[]> {
+  const { data, error } = await supabase
+    .from("application_pending_questions")
+    .select("*")
+    .eq("application_id", applicationId)
+    .eq("answer_source", "application_only");
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as ApplicationPendingQuestion[];
 }

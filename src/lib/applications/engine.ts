@@ -5,7 +5,8 @@ import { generateCoverLetter } from "@/lib/ai/cover-letter";
 import { answerQuestion } from "@/lib/ai/answer-questions";
 import { normalizeAnswerForField } from "./answer-normalization";
 import { isIdentityRole, isDocumentRole, resolveIdentityFieldValue, hasDocumentData } from "./identity-fields";
-import { syncPendingQuestions } from "./pending-questions";
+import { syncPendingQuestions, getApplicationOnlyAnswers } from "./pending-questions";
+import { normalizeApplicationOnlyAnswer } from "./application-only-answer";
 import { getApplicationProvider } from "./provider-registry";
 import { BrowserAutomationApplicationProvider } from "./providers/browser-automation-provider";
 import type { ApplicationProvider, CandidateApplicationData, FormField } from "./types";
@@ -269,12 +270,16 @@ export class ApplicationAutomationEngine {
     supabase: SupabaseClient,
     profile: Profile,
     form: { fields: FormField[] },
-    documents: { resumeText: string; coverLetterText: string | null }
-  ): Promise<{
+    documents: { resumeText: string; coverLetterText: string | null },
+applicationId?: string
+  ) : Promise<{
     resolvedQuestions: { field: FormField; answer: string; sourceEntryId: string }[];
     resolvedIdentity: { field: FormField; answer: string; role: string }[];
     unansweredRequired: { field: FormField; reason: string }[];
   }> {
+    const applicationOnlyAnswers = applicationId
+  ? await getApplicationOnlyAnswers(supabase, applicationId)
+  : [];
     const { data: libraryRows } = await supabase
       .from("answer_library")
       .select("*")
@@ -330,6 +335,33 @@ export class ApplicationAutomationEngine {
       }
 
       // role is "screening_question" (the default when omitted) — unchanged pipeline.
+      const applicationOnly = applicationOnlyAnswers.find(
+  (answer) => answer.field_id === field.id
+);
+
+if (applicationOnly) {
+  const normalizedApplicationOnly = normalizeApplicationOnlyAnswer(
+    field,
+    applicationOnly
+  );
+
+  if (normalizedApplicationOnly.ok) {
+    resolvedQuestions.push({
+      field,
+      answer: normalizedApplicationOnly.value,
+      sourceEntryId: "application_only",
+    });
+    continue;
+  }
+
+  if (field.required) {
+    unansweredRequired.push({
+      field,
+      reason: normalizedApplicationOnly.reason,
+    });
+    continue;
+  }
+}
       const result = await answerQuestion(field.label, library);
       const normalized = normalizeAnswerForField(field, result, {
         workAuthorization: profile.work_authorization,
@@ -393,13 +425,19 @@ export class ApplicationAutomationEngine {
         ? summarizeParsedCv(resumeVersion.parsed_data as never, profile)
         : profileToResumeText(profile);
 
-      const { unansweredRequired } = await this.resolveFormFields(supabase, profile, form, {
-        resumeText: realResumeText,
-        // Never fabricated: no cover letter has actually been produced at
-        // this point, so any required cover_letter-role field correctly
-        // comes back unresolved rather than falsely satisfied.
-        coverLetterText: null,
-      });
+      const { unansweredRequired } = await this.resolveFormFields(
+  supabase,
+  profile,
+  form,
+  {
+    resumeText: realResumeText,
+    // Never fabricated: no cover letter has actually been produced at
+    // this point, so any required cover_letter-role field correctly
+    // comes back unresolved rather than falsely satisfied.
+    coverLetterText: null,
+  },
+  application.id
+);
 
       await syncPendingQuestions(supabase, application.id, unansweredRequired);
     } catch (error) {
@@ -435,7 +473,14 @@ export class ApplicationAutomationEngine {
       return { blocked: true, outcome: { status: "manual_required", reason: reasonText } };
     }
 
-    const { resolvedQuestions, resolvedIdentity, unansweredRequired } = await this.resolveFormFields(supabase, profile, form, documents);
+    const { resolvedQuestions, resolvedIdentity, unansweredRequired } =
+  await this.resolveFormFields(
+    supabase,
+    profile,
+    form,
+    documents,
+    application.id
+  );
 
     // Persist the exact set of currently-unresolved required fields (full
     // FormField metadata — type, declared select options — not just the

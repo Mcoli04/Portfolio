@@ -1766,3 +1766,93 @@ test("engine.run(): the real GreenhouseApplicationProvider resolves the live-con
     global.fetch = originalFetch;
   }
 });
+test("engine.run(): an explicit application-only answer is consumed before the Answer Library and submitted using the provider's current option value", async () => {
+  const recorder = {
+    applicationsUpdates: [] as Record<string, unknown>[],
+    notifications: [] as Record<string, unknown>[],
+    events: [] as {
+      event_type: string;
+      metadata: Record<string, unknown>;
+    }[],
+  };
+
+  const pendingQuestionsTable: Record<string, unknown>[] = [
+    {
+      id: "pending-1",
+      application_id: "application-1",
+      field_id: "relocate",
+      question_text: "Would you need to relocate in order to perform this role?",
+      field_type: "select",
+      options: [
+        { label: "Yes", value: "1" },
+        { label: "No", value: "0" },
+      ],
+      required: true,
+      answer_value: "0",
+      answer_source: "application_only",
+      source_answer_library_id: null,
+      created_at: "2026-09-05T00:00:00.000Z",
+      updated_at: "2026-09-05T00:00:00.000Z",
+    },
+  ];
+
+  const supabase = createFakeSupabase(recorder, {
+    libraryRows: [],
+    pendingQuestionsTable,
+  });
+
+  const form: ApplicationForm = {
+    fields: [
+      {
+        id: "relocate",
+        label: "Would you need to relocate in order to perform this role?",
+        type: "select",
+        required: true,
+        options: [
+          { label: "Yes", value: "1" },
+          { label: "No", value: "0" },
+        ],
+      },
+    ],
+    requiresHumanVerification: false,
+  };
+
+  const provider = new FakeFormProvider(form);
+
+  const application = {
+    id: "application-1",
+    user_id: "user-1",
+    job_id: "job-1",
+  } as unknown as Application;
+
+  const profile = makeProfile();
+  const job = makeJob();
+
+  const resumeVersion = {
+    id: "rv-1",
+    parsed_data: null,
+    file_name: "cv.pdf",
+  } as unknown as ResumeVersion;
+
+  const engine = new ApplicationAutomationEngine();
+
+  const outcome = await engine.run({
+    supabase,
+    application,
+    job,
+    profile,
+    resumeVersion,
+    provider,
+  });
+
+  assert.equal(outcome.status, "submitted");
+  assert.deepEqual(provider.lastCandidate?.answers, {
+    relocate: "0",
+  });
+
+  assert.equal(
+    pendingQuestionsTable.length,
+    0,
+    "a successfully consumed application-only answer should no longer remain pending"
+  );
+});
