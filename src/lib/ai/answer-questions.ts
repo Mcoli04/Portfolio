@@ -5,6 +5,35 @@ export interface QuestionAnswer {
   answer: string | null;
   manualRequired: boolean;
   sourceEntryId?: string;
+  /** Why manualRequired is true — omitted when an answer was found. */
+  reason?: "hard_blocked" | "unmatched";
+}
+
+const HARD_BLOCKED_PATTERNS: RegExp[] = [
+  /criminal (record|history|conviction)/i,
+  /\bconvicted\b/i,
+  /background check/i,
+  /\brace\b/i,
+  /\bethnicity\b/i,
+  /gender identity/i,
+  /sexual orientation/i,
+  /disability(\s+status)?/i,
+  /veteran status/i,
+  /equal employment opportunity/i,
+  /self-identif/i,
+];
+
+/**
+ * Legal/compliance-sensitive and EEO/demographic self-identification
+ * questions (criminal history, background checks, race, gender identity,
+ * sexual orientation, disability, veteran status, EEO self-ID forms).
+ * These must never be auto-answered — not even from a verified Answer
+ * Library entry — because a canned answer written for one employer's exact
+ * wording, or a custom entry meant for an unrelated question, is not safe
+ * to reuse for a legally consequential category like this.
+ */
+export function isHardBlockedQuestion(questionText: string): boolean {
+  return HARD_BLOCKED_PATTERNS.some((pattern) => pattern.test(questionText));
 }
 
 const COMMON_QUESTION_KEYS: Record<string, RegExp> = {
@@ -35,6 +64,10 @@ function keyForQuestion(questionText: string): string | null {
  * fabricated answer.
  */
 export async function answerQuestion(questionText: string, library: AnswerLibraryEntry[]): Promise<QuestionAnswer> {
+  if (isHardBlockedQuestion(questionText)) {
+    return { answer: null, manualRequired: true, reason: "hard_blocked" };
+  }
+
   const key = keyForQuestion(questionText);
   if (key) {
     const entry = library.find((e) => e.question_key === key && e.verified);
@@ -80,5 +113,5 @@ export async function answerQuestion(questionText: string, library: AnswerLibrar
     }
   }
 
-  return { answer: null, manualRequired: true };
+  return { answer: null, manualRequired: true, reason: "unmatched" };
 }

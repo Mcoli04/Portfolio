@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Application, Job, Profile, ResumeVersion } from "@/lib/types/database";
+import type { Application, AnswerLibraryEntry, Job, Profile, ResumeVersion } from "@/lib/types/database";
 import { tailorCvForJob } from "@/lib/ai/cv-tailoring";
 import { generateCoverLetter } from "@/lib/ai/cover-letter";
+import { answerQuestion } from "@/lib/ai/answer-questions";
 import { getApplicationProvider } from "./provider-registry";
 import { BrowserAutomationApplicationProvider } from "./providers/browser-automation-provider";
-import type { ApplicationProvider, CandidateApplicationData } from "./types";
+import type { ApplicationProvider, CandidateApplicationData, FormField } from "./types";
 
 export type EngineOutcome =
   | { status: "submitted"; externalApplicationId?: string; provider: string }
@@ -17,6 +18,15 @@ interface RunContext {
   job: Job;
   profile: Profile;
   resumeVersion: ResumeVersion | null;
+  /**
+   * Test-only override for provider selection — bypasses selectProvider(job)
+   * so tests can exercise getApplicationForm()/answerQuestion() wiring
+   * against a fake provider without needing a real, live one. Production
+   * call sites (api/applications/apply/route.ts, application-worker.ts)
+   * never set this, so selectProvider(job) governs every real request
+   * exactly as before.
+   */
+  provider?: ApplicationProvider;
 }
 
 async function logEvent(
@@ -101,7 +111,7 @@ export class ApplicationAutomationEngine {
     }
     await logEvent(supabase, application.id, "CV_SELECTED", { resumeVersionId: resumeVersion.id });
 
-    const provider = selectProvider(job);
+    const provider = ctx.provider ?? selectProvider(job);
     if (!provider) {
       await this.markManual(supabase, application, "No supported automatic application channel for this job.", {
         clearChannel: true,
@@ -139,7 +149,8 @@ export class ApplicationAutomationEngine {
       .single();
     await logEvent(supabase, application.id, "COVER_LETTER_CREATED", { aiAssisted: coverLetter.aiAssisted });
 
-    await logEvent(supabase, application.id, "QUESTIONS_COMPLETED", { note: "No dynamic screening questions detected for this channel." });
+    const answerResolution = await this.resolveApplicationAnswers(supabase, application, job, profile, provider);
+    if (answerResolution.blocked) return answerResolution.outcome;
 
     const candidate: CandidateApplicationData = {
       fullName: profile.full_name ?? profile.email,
@@ -148,7 +159,7 @@ export class ApplicationAutomationEngine {
       resumeText: tailored.text,
       resumeFileName: resumeVersion.file_name,
       coverLetterText: coverLetter.text,
-      answers: {},
+      answers: answerResolution.answers,
     };
 
     await supabase
@@ -216,6 +227,77 @@ export class ApplicationAutomationEngine {
   }
 
   /**
+   * Resolves the employer's screening questions (spec: verified Answer
+   * Library wiring) using ONLY answerQuestion()'s verified-entry matching —
+   * never CV-derived or AI-generated content. A provider with no form is
+   * untouched (identical to the previous no-op behavior). A required field
+   * that can't be traced to a verified answer_library row stops the run
+   * before submitApplication() is ever called; an optional one is simply
+   * omitted rather than guessed.
+   */
+  private async resolveApplicationAnswers(
+    supabase: SupabaseClient,
+    application: Application,
+    job: Job,
+    profile: Profile,
+    provider: ApplicationProvider
+  ): Promise<{ blocked: true; outcome: EngineOutcome } | { blocked: false; answers: Record<string, string> }> {
+    const form = await provider.getApplicationForm(job);
+    if (!form) {
+      await logEvent(supabase, application.id, "QUESTIONS_COMPLETED", { note: "No dynamic screening questions detected for this channel." });
+      return { blocked: false, answers: {} };
+    }
+
+    const { data: libraryRows } = await supabase
+      .from("answer_library")
+      .select("*")
+      .eq("user_id", profile.id)
+      .eq("verified", true)
+      .returns<AnswerLibraryEntry[]>();
+    const library = libraryRows ?? [];
+
+    const resolved: { field: FormField; answer: string; sourceEntryId: string }[] = [];
+    const unansweredRequired: { field: FormField; reason: string }[] = [];
+
+    for (const field of form.fields) {
+      if (field.type === "file") continue; // resume/cover letter — handled by uploadResume/uploadCoverLetter, not a screening question
+      const result = await answerQuestion(field.label, library);
+      if (result.answer !== null && result.sourceEntryId) {
+        resolved.push({ field, answer: result.answer, sourceEntryId: result.sourceEntryId });
+      } else if (field.required) {
+        unansweredRequired.push({ field, reason: result.reason ?? "unmatched" });
+      }
+      // Optional field with no safe verified answer: silently omitted, never fabricated.
+    }
+
+    if (unansweredRequired.length > 0) {
+      const reasonText = `This employer asks required question(s) with no safe verified answer: ${unansweredRequired
+        .map((u) => `"${u.field.label}"`)
+        .join(", ")}.`;
+      await this.markManual(supabase, application, reasonText, {
+        // A real form WAS inspected via this provider, so the channel it
+        // would have used is genuine information, unlike the "no provider
+        // was ever selected" case which resets to manual/null.
+        channel: { method: job.application_method, provider: provider.key },
+        metadata: {
+          questions: unansweredRequired.map((u) => ({ fieldId: u.field.id, questionText: u.field.label, reason: u.reason })),
+        },
+      });
+      return { blocked: true, outcome: { status: "manual_required", reason: reasonText } };
+    }
+
+    if (resolved.length > 0) {
+      await logEvent(supabase, application.id, "ANSWERS_RESOLVED", {
+        answers: resolved.map((r) => ({ fieldId: r.field.id, questionText: r.field.label, sourceEntryId: r.sourceEntryId })),
+      });
+    } else {
+      await logEvent(supabase, application.id, "QUESTIONS_COMPLETED", { note: "No dynamic screening questions detected for this channel." });
+    }
+
+    return { blocked: false, answers: Object.fromEntries(resolved.map((r) => [r.field.id, r.answer])) };
+  }
+
+  /**
    * `clearChannel` resets application_method/application_provider to "manual"/null
    * — pass it only when no provider was ever selected for this run (no CV,
    * or selectProvider() returned null), so a stale value from an earlier
@@ -223,22 +305,25 @@ export class ApplicationAutomationEngine {
    * domain was removed from the browser-automation allowlist) can't keep
    * claiming a specific automated channel was used. When a provider WAS
    * actually attempted and it returned manualRequired itself (e.g. it hit
-   * a CAPTCHA), leave the channel fields alone — they accurately record
-   * what was genuinely tried.
+   * a CAPTCHA), or its form was genuinely inspected (`channel`), leave/set
+   * the channel fields to reflect what was really tried.
    */
   private async markManual(
     supabase: SupabaseClient,
     application: Application,
     reason: string,
-    options: { clearChannel?: boolean } = {}
+    options: { clearChannel?: boolean; channel?: { method: string; provider: string }; metadata?: Record<string, unknown> } = {}
   ) {
     const updates: Record<string, unknown> = { status: "manual_required", manual_required: true, error_message: reason };
     if (options.clearChannel) {
       updates.application_method = "manual";
       updates.application_provider = null;
+    } else if (options.channel) {
+      updates.application_method = options.channel.method;
+      updates.application_provider = options.channel.provider;
     }
     await supabase.from("applications").update(updates).eq("id", application.id);
-    await logEvent(supabase, application.id, "MANUAL_ACTION_REQUIRED", { reason });
+    await logEvent(supabase, application.id, "MANUAL_ACTION_REQUIRED", { reason, ...options.metadata });
     await supabase.from("notifications").insert({
       user_id: application.user_id,
       type: "manual_action_required",
