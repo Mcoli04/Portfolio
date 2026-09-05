@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApplicationAutomationEngine, selectProvider } from "./engine";
+import { getApplicationProvider } from "./provider-registry";
 import { BrowserAutomationApplicationProvider } from "./providers/browser-automation-provider";
 import { GreenhouseApplicationProvider } from "./providers/greenhouse-provider";
 import { BaseApplicationProvider } from "./providers/base";
@@ -260,43 +261,55 @@ test("engine.run(): a real Greenhouse job with no verified provider resolves to 
   const supabase = createFakeSupabase(recorder);
 
   const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
-  const profile = { id: "user-1", email: "candidate@example.com", auto_apply_authorized: true } as unknown as Profile;
+  const profile = makeProfile();
   // Truthy is all this path needs — document generation (which would read
   // its fields) is unreachable once selectProvider returns null, before
   // resumeVersion's contents are ever touched.
   const resumeVersion = {} as unknown as ResumeVersion;
 
-  const engine = new ApplicationAutomationEngine();
-  const outcome = await engine.run({ supabase, application, job: GREENHOUSE_JOB, profile, resumeVersion });
+  // Since selectProvider() returns null here, the engine's !provider branch
+  // now also performs best-effort, read-only Greenhouse form inspection
+  // (see the "read-only form inspection" tests below) — which means this
+  // path genuinely calls fetch(). Mock it so this test makes no real
+  // network call regardless of that side effect.
+  const originalFetch = global.fetch;
+  global.fetch = (async () => ({ ok: true, json: async () => ({ id: 123456, questions: [] }) })) as unknown as typeof fetch;
 
-  assert.equal(outcome.status, "manual_required");
+  try {
+    const engine = new ApplicationAutomationEngine();
+    const outcome = await engine.run({ supabase, application, job: GREENHOUSE_JOB, profile, resumeVersion });
 
-  // The real employer application link lives on the job row, independent
-  // of application processing, and must never be altered by it.
-  assert.equal(GREENHOUSE_JOB.application_url, "https://job-boards.greenhouse.io/betsson/jobs/123456");
+    assert.equal(outcome.status, "manual_required");
 
-  assert.ok(recorder.applicationsUpdates.length > 0, "expected at least one applications update");
-  for (const update of recorder.applicationsUpdates) {
-    // Never a fabricated submission, and never a generic "failed" for what
-    // is really just "no verified automatic channel yet".
-    assert.notEqual(update.status, "submitted");
-    assert.notEqual(update.status, "failed");
-    // Document generation (submitted_resume_id/cover_letter_id) never ran
-    // on this path — the false "CV/cover letter submitted" UI bug can only
-    // happen if these get set without a real submission ever having been
-    // attempted, and here they're never set at all.
-    assert.equal("submitted_resume_id" in update, false);
-    assert.equal("cover_letter_id" in update, false);
+    // The real employer application link lives on the job row, independent
+    // of application processing, and must never be altered by it.
+    assert.equal(GREENHOUSE_JOB.application_url, "https://job-boards.greenhouse.io/betsson/jobs/123456");
+
+    assert.ok(recorder.applicationsUpdates.length > 0, "expected at least one applications update");
+    for (const update of recorder.applicationsUpdates) {
+      // Never a fabricated submission, and never a generic "failed" for what
+      // is really just "no verified automatic channel yet".
+      assert.notEqual(update.status, "submitted");
+      assert.notEqual(update.status, "failed");
+      // Document generation (submitted_resume_id/cover_letter_id) never ran
+      // on this path — the false "CV/cover letter submitted" UI bug can only
+      // happen if these get set without a real submission ever having been
+      // attempted, and here they're never set at all.
+      assert.equal("submitted_resume_id" in update, false);
+      assert.equal("cover_letter_id" in update, false);
+    }
+    const finalUpdate = recorder.applicationsUpdates.at(-1);
+    assert.equal(finalUpdate?.status, "manual_required");
+    // No provider was ever selected on this path, so the channel fields must
+    // be reset rather than left stale (e.g. carrying "browser_automation"
+    // from an earlier attempt made before its domain was allowlist-gated) —
+    // that stale value is exactly what showed up as "Browser_automation" on
+    // the Applications page.
+    assert.equal(finalUpdate?.application_method, "manual");
+    assert.equal(finalUpdate?.application_provider, null);
+  } finally {
+    global.fetch = originalFetch;
   }
-  const finalUpdate = recorder.applicationsUpdates.at(-1);
-  assert.equal(finalUpdate?.status, "manual_required");
-  // No provider was ever selected on this path, so the channel fields must
-  // be reset rather than left stale (e.g. carrying "browser_automation"
-  // from an earlier attempt made before its domain was allowlist-gated) —
-  // that stale value is exactly what showed up as "Browser_automation" on
-  // the Applications page.
-  assert.equal(finalUpdate?.application_method, "manual");
-  assert.equal(finalUpdate?.application_provider, null);
 });
 
 test("engine.run(): a provider with no application form preserves current behavior (empty answers, submission proceeds)", async () => {
@@ -1301,4 +1314,204 @@ test("engine.run(): existing MANUAL_ACTION_REQUIRED event metadata shape is unch
   assert.equal(finalUpdate?.status, "manual_required");
   assert.equal(finalUpdate?.application_method, "ats");
   assert.equal(finalUpdate?.application_provider, "fake_form_provider");
+});
+
+// ---- Read-only form inspection when no LIVE submission channel exists ----
+//
+// selectProvider() returning null (e.g. every real Greenhouse job today,
+// since GreenhouseApplicationProvider.isConfigured() is hardcoded false) is
+// a submission-authorization fact, not a reason to also lose visibility
+// into the employer's declared required fields. These tests exercise
+// ApplicationAutomationEngine's separate, best-effort
+// inspectRawProviderFormForPendingQuestions() path, which looks the
+// provider up directly by job.application_provider and calls only
+// getApplicationForm() — never submitApplication()/submitLive() — so that
+// application_pending_questions is populated even though the job can never
+// actually be auto-submitted.
+
+function greenhouseJobFixture(overrides: Partial<Job> = {}): Job {
+  return makeJob({
+    source: "greenhouse",
+    application_method: "ats",
+    application_provider: "greenhouse",
+    application_url: "https://job-boards.greenhouse.io/betsson/jobs/123456",
+    source_job_id: "123456",
+    ...overrides,
+  });
+}
+
+test("engine.run(): a real Greenhouse NOT_CONFIGURED job still has its public form inspected, and unresolved Betsson-shaped questions are persisted — while isConfigured() stays false and submitApplication() is never called", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const pendingQuestionsTable: Record<string, unknown>[] = [];
+  const supabase = createFakeSupabase(recorder, { libraryRows: [], pendingQuestionsTable });
+
+  const originalFetch = global.fetch;
+  global.fetch = (async (url: string) => {
+    assert.equal(url, "https://boards-api.greenhouse.io/v1/boards/betsson/jobs/123456?questions=true");
+    return {
+      ok: true,
+      json: async () => ({
+        id: 123456,
+        questions: [
+          { id: 1, label: "How big is your affiliate portfolio?", required: true, fields: [{ name: "question_1", type: "input_text" }] },
+          {
+            id: 2,
+            label: "Would you need to relocate in order to perform this role?",
+            required: true,
+            fields: [{ name: "question_2", type: "multi_value_single_select", values: [{ label: "Yes", value: 1 }, { label: "No", value: 0 }] }],
+          },
+        ],
+      }),
+    } as Response;
+  }) as typeof fetch;
+
+  // Proves submitApplication() is genuinely never invoked on this path,
+  // rather than merely returning a non-"submitted" result — the real
+  // GreenhouseApplicationProvider singleton (shared with provider-registry
+  // and selectProvider()) is spied on directly.
+  const greenhouseProvider = getApplicationProvider("greenhouse")!;
+  const originalSubmitApplication = greenhouseProvider.submitApplication.bind(greenhouseProvider);
+  let submitApplicationCalled = false;
+  (greenhouseProvider as { submitApplication: typeof greenhouseProvider.submitApplication }).submitApplication = async (...args) => {
+    submitApplicationCalled = true;
+    return originalSubmitApplication(...args);
+  };
+
+  try {
+    const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+    const profile = makeProfile();
+    const job = greenhouseJobFixture();
+    const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+    const engine = new ApplicationAutomationEngine();
+    const outcome = await engine.run({ supabase, application, job, profile, resumeVersion });
+
+    // The outcome is unchanged from before this fix: still manual_required
+    // for "no automatic application channel", not altered by inspection.
+    assert.equal(outcome.status, "manual_required");
+    assert.equal(outcome.status === "manual_required" ? outcome.reason : "", "No automatic application channel available.");
+
+    assert.equal(submitApplicationCalled, false, "submitApplication() must never be called by read-only inspection");
+    assert.equal(greenhouseProvider.getStatus(), "NOT_CONFIGURED", "isConfigured() must remain false — inspection never flips submission authorization");
+    assert.ok(!recorder.applicationsUpdates.some((u) => u.status === "submitted" || u.status === "applying"));
+
+    assert.equal(pendingQuestionsTable.length, 2, "both unresolved Betsson-shaped questions must be persisted");
+    const byField = Object.fromEntries(pendingQuestionsTable.map((r) => [r.field_id as string, r]));
+    assert.equal(byField.question_1.question_text, "How big is your affiliate portfolio?");
+    assert.equal(byField.question_1.field_type, "text");
+    assert.equal(byField.question_2.field_type, "select");
+    assert.deepEqual(byField.question_2.options, [
+      { label: "Yes", value: "1" },
+      { label: "No", value: "0" },
+    ]);
+    for (const row of pendingQuestionsTable) {
+      assert.equal(row.answer_value, null, "Phase 1 inspection never writes an answer, same as the submission path");
+    }
+
+    // Channel fields still reset exactly as before this fix — no provider
+    // was ever selected/authorized for submission, so nothing "real" is
+    // claimed as the application's channel just because its form was read.
+    const finalUpdate = recorder.applicationsUpdates.at(-1);
+    assert.equal(finalUpdate?.application_method, "manual");
+    assert.equal(finalUpdate?.application_provider, null);
+  } finally {
+    global.fetch = originalFetch;
+    delete (greenhouseProvider as { submitApplication?: unknown }).submitApplication;
+  }
+});
+
+test("engine.run(): read-only inspection never fabricates document availability — a real resume resolves from actual profile/CV data, but a required cover-letter field is always left unresolved", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const pendingQuestionsTable: Record<string, unknown>[] = [];
+  const supabase = createFakeSupabase(recorder, { libraryRows: [], pendingQuestionsTable });
+
+  const originalFetch = global.fetch;
+  global.fetch = (async () => ({
+    ok: true,
+    json: async () => ({
+      id: 123456,
+      questions: [
+        {
+          id: 5,
+          label: "Resume/CV",
+          required: true,
+          fields: [
+            { name: "resume", type: "input_file" },
+            { name: "resume_text", type: "textarea" },
+          ],
+        },
+        {
+          id: 6,
+          label: "Cover Letter",
+          required: true,
+          fields: [
+            { name: "cover_letter", type: "input_file" },
+            { name: "cover_letter_text", type: "textarea" },
+          ],
+        },
+      ],
+    }),
+  })) as unknown as typeof fetch;
+
+  try {
+    const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+    // Real, non-empty structured data — profileToResumeText(profile) will
+    // genuinely produce non-empty text from this, never a placeholder.
+    const profile = makeProfile({ full_name: "Maria Borg", email: "maria@example.com" });
+    const job = greenhouseJobFixture();
+    const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+    const engine = new ApplicationAutomationEngine();
+    const outcome = await engine.run({ supabase, application, job, profile, resumeVersion });
+
+    assert.equal(outcome.status, "manual_required");
+
+    // Only the cover-letter field is pending: the resume field was resolved
+    // from resumeVersion's already-real, already-confirmed existence (never
+    // a fabricated placeholder), while the cover letter — which has not
+    // actually been generated at this point in the run — is honestly
+    // reported as unresolved rather than falsely satisfied.
+    assert.equal(pendingQuestionsTable.length, 1);
+    assert.equal(pendingQuestionsTable[0].field_id, "cover_letter");
+    assert.equal(pendingQuestionsTable[0].question_text, "Cover Letter");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("engine.run(): a fetch failure during read-only Greenhouse form inspection fails closed — still resolves to manual_required with no pending-question rows persisted", async () => {
+  const recorder = { applicationsUpdates: [] as Record<string, unknown>[], notifications: [] as Record<string, unknown>[], events: [] as { event_type: string; metadata: Record<string, unknown> }[] };
+  const pendingQuestionsTable: Record<string, unknown>[] = [];
+  const supabase = createFakeSupabase(recorder, { libraryRows: [], pendingQuestionsTable });
+
+  const originalFetch = global.fetch;
+  global.fetch = (async () => {
+    throw new Error("simulated network failure");
+  }) as unknown as typeof fetch;
+
+  try {
+    const application = { id: "application-1", user_id: "user-1", job_id: "job-1" } as unknown as Application;
+    const profile = makeProfile();
+    const job = greenhouseJobFixture();
+    const resumeVersion = { id: "rv-1", parsed_data: null, file_name: "cv.pdf" } as unknown as ResumeVersion;
+
+    const engine = new ApplicationAutomationEngine();
+    const outcome = await engine.run({ supabase, application, job, profile, resumeVersion });
+
+    // GreenhouseApplicationProvider.getApplicationForm() itself already
+    // catches fetch errors and returns null (see providers/greenhouse-provider.ts),
+    // and inspectRawProviderFormForPendingQuestions() wraps everything in
+    // its own try/catch on top of that — either layer failing closed must
+    // still land here, at the same manual_required outcome as always.
+    assert.equal(outcome.status, "manual_required");
+    assert.equal(outcome.status === "manual_required" ? outcome.reason : "", "No automatic application channel available.");
+    assert.equal(pendingQuestionsTable.length, 0, "a failed inspection must not persist any (fabricated or partial) pending rows");
+
+    const finalUpdate = recorder.applicationsUpdates.at(-1);
+    assert.equal(finalUpdate?.status, "manual_required");
+    assert.equal(finalUpdate?.application_method, "manual");
+    assert.equal(finalUpdate?.application_provider, null);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });

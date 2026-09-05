@@ -116,6 +116,13 @@ export class ApplicationAutomationEngine {
 
     const provider = ctx.provider ?? selectProvider(job);
     if (!provider) {
+      // No LIVE submission channel exists for this job (e.g. Greenhouse
+      // stays NOT_CONFIGURED until a real employer partnership grants
+      // Apply API access) — but that's a submission-authorization fact,
+      // not a reason to also throw away read-only visibility into the
+      // employer's form. Best-effort, side-effect-only: never changes the
+      // manual_required outcome below, never attempts submission.
+      await this.inspectRawProviderFormForPendingQuestions(supabase, application, job, profile, resumeVersion);
       await this.markManual(supabase, application, "No supported automatic application channel for this job.", {
         clearChannel: true,
       });
@@ -248,34 +255,26 @@ export class ApplicationAutomationEngine {
    * submitApplication() is ever called; an optional one is simply omitted
    * rather than guessed.
    */
-  private async resolveApplicationAnswers(
+  /**
+   * The shared per-field resolution logic used both by a real submission
+   * attempt (resolveApplicationAnswers, below) and by read-only inspection
+   * when no live submission channel exists at all
+   * (inspectRawProviderFormForPendingQuestions) — one implementation, so
+   * the identity/document/screening-question branching can never drift
+   * between the two call sites. Does not fetch the form itself and does
+   * not decide what happens with the result (mark manual, persist,
+   * build candidate.answers) — callers own that.
+   */
+  private async resolveFormFields(
     supabase: SupabaseClient,
-    application: Application,
-    job: Job,
     profile: Profile,
-    provider: ApplicationProvider,
-    documents: { resumeText: string; coverLetterText: string }
-  ): Promise<{ blocked: true; outcome: EngineOutcome } | { blocked: false; answers: Record<string, string> }> {
-    const form = await provider.getApplicationForm(job);
-    if (!form) {
-      await logEvent(supabase, application.id, "QUESTIONS_COMPLETED", { note: "No dynamic screening questions detected for this channel." });
-      return { blocked: false, answers: {} };
-    }
-
-    if (form.requiresHumanVerification) {
-      // The provider detected something it must not attempt to bypass
-      // (CAPTCHA, login wall, MFA) — stop immediately, before the Answer
-      // Library is even fetched, so no answer can be resolved and no
-      // candidate/submission is ever built for this run.
-      const reasonText =
-        "This employer's application requires manual human verification (CAPTCHA, login, or MFA) and cannot be completed automatically.";
-      await this.markManual(supabase, application, reasonText, {
-        channel: { method: job.application_method, provider: provider.key },
-        metadata: { blockedReason: "human_verification_required" },
-      });
-      return { blocked: true, outcome: { status: "manual_required", reason: reasonText } };
-    }
-
+    form: { fields: FormField[] },
+    documents: { resumeText: string; coverLetterText: string | null }
+  ): Promise<{
+    resolvedQuestions: { field: FormField; answer: string; sourceEntryId: string }[];
+    resolvedIdentity: { field: FormField; answer: string; role: string }[];
+    unansweredRequired: { field: FormField; reason: string }[];
+  }> {
     const { data: libraryRows } = await supabase
       .from("answer_library")
       .select("*")
@@ -343,6 +342,100 @@ export class ApplicationAutomationEngine {
       }
       // Optional field with no safe normalized answer: silently omitted, never fabricated.
     }
+
+    return { resolvedQuestions, resolvedIdentity, unansweredRequired };
+  }
+
+  /**
+   * Best-effort, read-only inspection for when no LIVE submission channel
+   * exists at all (selectProvider() returned null) — so required-question
+   * metadata isn't silently lost just because no provider is currently
+   * authorized to submit. Looks up the provider DIRECTLY by key,
+   * bypassing getStatus()/isConfigured() on purpose: whether a provider
+   * may be trusted to submit and whether it may be asked to describe its
+   * own form are different questions, and this only ever answers the
+   * second one. Never calls submitApplication()/submitLive(), never
+   * changes the manual_required outcome/reason the caller sets — this is
+   * purely a side effect on application_pending_questions. Fails closed:
+   * any error anywhere in here is swallowed so inspection can never turn
+   * a clean manual_required into a crash.
+   *
+   * Document data: a cover letter is always freshly authored per
+   * application — there is no pre-existing record of one the way there
+   * is a resume — so nothing has genuinely produced one yet at this point
+   * in run() (tailoring/generation happen later, and never will for a job
+   * with no live channel). Rather than generate one just to check a box
+   * (wasting a real OpenAI call for a job that structurally can never be
+   * submitted) or invent placeholder text, cover_letter-role fields are
+   * always treated as unresolved here — genuinely unknown, not fabricated
+   * as present. A resume is different: resumeVersion is already a real,
+   * confirmed fact by this point in run() (checked earlier), so a
+   * resume-role field is resolved from the same real profile/CV data
+   * (profileToResumeText/summarizeParsedCv) already used to build the
+   * tailoring input elsewhere in this file — not invented text, just the
+   * untailored real content.
+   */
+  private async inspectRawProviderFormForPendingQuestions(
+    supabase: SupabaseClient,
+    application: Application,
+    job: Job,
+    profile: Profile,
+    resumeVersion: ResumeVersion
+  ): Promise<void> {
+    try {
+      const rawProvider = job.application_provider ? getApplicationProvider(job.application_provider) : null;
+      if (!rawProvider) return;
+
+      const form = await rawProvider.getApplicationForm(job);
+      if (!form || form.requiresHumanVerification) return;
+
+      const realResumeText = resumeVersion.parsed_data
+        ? summarizeParsedCv(resumeVersion.parsed_data as never, profile)
+        : profileToResumeText(profile);
+
+      const { unansweredRequired } = await this.resolveFormFields(supabase, profile, form, {
+        resumeText: realResumeText,
+        // Never fabricated: no cover letter has actually been produced at
+        // this point, so any required cover_letter-role field correctly
+        // comes back unresolved rather than falsely satisfied.
+        coverLetterText: null,
+      });
+
+      await syncPendingQuestions(supabase, application.id, unansweredRequired);
+    } catch (error) {
+      console.error("[engine] read-only form inspection failed", error instanceof Error ? error.message : error);
+    }
+  }
+
+  private async resolveApplicationAnswers(
+    supabase: SupabaseClient,
+    application: Application,
+    job: Job,
+    profile: Profile,
+    provider: ApplicationProvider,
+    documents: { resumeText: string; coverLetterText: string }
+  ): Promise<{ blocked: true; outcome: EngineOutcome } | { blocked: false; answers: Record<string, string> }> {
+    const form = await provider.getApplicationForm(job);
+    if (!form) {
+      await logEvent(supabase, application.id, "QUESTIONS_COMPLETED", { note: "No dynamic screening questions detected for this channel." });
+      return { blocked: false, answers: {} };
+    }
+
+    if (form.requiresHumanVerification) {
+      // The provider detected something it must not attempt to bypass
+      // (CAPTCHA, login wall, MFA) — stop immediately, before the Answer
+      // Library is even fetched, so no answer can be resolved and no
+      // candidate/submission is ever built for this run.
+      const reasonText =
+        "This employer's application requires manual human verification (CAPTCHA, login, or MFA) and cannot be completed automatically.";
+      await this.markManual(supabase, application, reasonText, {
+        channel: { method: job.application_method, provider: provider.key },
+        metadata: { blockedReason: "human_verification_required" },
+      });
+      return { blocked: true, outcome: { status: "manual_required", reason: reasonText } };
+    }
+
+    const { resolvedQuestions, resolvedIdentity, unansweredRequired } = await this.resolveFormFields(supabase, profile, form, documents);
 
     // Persist the exact set of currently-unresolved required fields (full
     // FormField metadata — type, declared select options — not just the
