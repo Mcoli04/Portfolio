@@ -4,12 +4,13 @@ import { ApplicationStatusBadge } from "@/components/app/application-status-badg
 import { documentStatusLabel } from "@/lib/applications/document-status";
 import { applicationChannelLabel } from "@/lib/applications/method-label";
 import { FileText, ExternalLink } from "lucide-react";
-import type { Application, Job } from "@/lib/types/database";
+import type { Application, ApplicationPendingQuestion, Job } from "@/lib/types/database";
 
 export const dynamic = "force-dynamic";
 
 interface ApplicationRow extends Application {
   jobs: Job | null;
+  application_pending_questions: ApplicationPendingQuestion[];
 }
 
 export default async function ApplicationsPage() {
@@ -21,7 +22,7 @@ export default async function ApplicationsPage() {
 
   const { data: applications } = await supabase
     .from("applications")
-    .select("*, jobs(*)")
+    .select("*, jobs(*), application_pending_questions(*)")
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
     .returns<ApplicationRow[]>();
@@ -72,6 +73,16 @@ export default async function ApplicationsPage() {
                   {documentStatusLabel("cover_letter", app.status)}
                 </span>
               )}
+              {app.application_pending_questions.length > 0 && (
+                <a
+                  href={`/applications/${app.id}`}
+                  className="text-xs font-medium text-brand-600 hover:underline"
+                >
+                  Review {app.application_pending_questions.length} question
+                  {app.application_pending_questions.length === 1 ? "" : "s"}
+                </a>
+              )}
+
               {app.jobs?.application_url && app.status === "manual_required" && (
                 <a
                   href={app.jobs.application_url}
