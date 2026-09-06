@@ -24,7 +24,7 @@ Every one of these is genuinely optional. Missing it does not crash the app — 
 | Env var | Powers | Without it |
 |---|---|---|
 | `OPENAI_API_KEY` | CV parsing, match explanations, CV tailoring, cover letters | Deterministic keyword-based CV parsing; templated match explanations and cover letters — still truthful, just less polished |
-| `RESEND_API_KEY` | Sending authorised email applications | Email applications report `NOT_CONFIGURED` and fall back to manual |
+| `RESEND_API_KEY` + `RESEND_FROM_EMAIL` | Sending authorised email applications from a verified sender | Email applications report `NOT_CONFIGURED` and fall back to manual |
 | `SUPABASE_SERVICE_ROLE_KEY` | Job ingestion cron, background workers, admin account deletion | Cron/worker endpoints return a clear "not configured" error; the core swipe-to-apply loop still works fully on the signed-in user's own RLS-scoped session |
 | `CRON_SECRET` | Authorizes `/api/cron/*` | Cron endpoints refuse all requests |
 | `GREENHOUSE_BOARD_TOKENS`, `LEVER_SITE_IDS`, `WORKABLE_ACCOUNT_SUBDOMAINS`, `SMARTRECRUITERS_COMPANY_IDS`, `ASHBY_JOB_BOARD_NAMES` | Reading each ATS's public job board for Malta postings | That adapter contributes zero jobs (`NOT_CONFIGURED`) |

@@ -15,13 +15,15 @@ export const env = {
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   openaiApiKey: process.env.OPENAI_API_KEY,
   resendApiKey: process.env.RESEND_API_KEY,
+  resendFromEmail: process.env.RESEND_FROM_EMAIL,
   cronSecret: process.env.CRON_SECRET,
 };
 
 export const isSupabaseConfigured = present(env.supabaseUrl) && present(env.supabasePublishableKey);
 export const isServiceRoleConfigured = present(env.supabaseServiceRoleKey);
 export const isOpenAIConfigured = present(env.openaiApiKey);
-export const isResendConfigured = present(env.resendApiKey);
+export const isResendConfigured =
+  present(env.resendApiKey) && present(env.resendFromEmail);
 export const isCronSecretConfigured = present(env.cronSecret);
 
 function csv(value: string | undefined): string[] {

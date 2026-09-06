@@ -35,7 +35,7 @@ export class EmailApplicationProvider extends BaseApplicationProvider {
       : [];
 
     const result = await resend.emails.send({
-      from: "applications@maltajobs.app",
+      from: env.resendFromEmail!,
       to: job.application_email,
       replyTo: candidate.email,
       subject,
