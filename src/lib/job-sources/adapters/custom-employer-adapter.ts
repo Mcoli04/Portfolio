@@ -44,7 +44,12 @@ export class CustomEmployerAdapter extends BaseJobSourceAdapter {
   }
 
   normalizeJob(raw: RawSourceJob): NormalizedJob {
-    const method = (raw.__applicationMethod as "internal" | "email" | "manual") ?? "manual";
+    const requestedMethod = (raw.__applicationMethod as "internal" | "email" | "manual") ?? "manual";
+    const applicationEmail =
+      typeof raw.__applicationEmail === "string" && raw.__applicationEmail.trim().length > 0
+        ? raw.__applicationEmail.trim()
+        : undefined;
+    const method = requestedMethod === "email" && !applicationEmail ? "manual" : requestedMethod;
     return {
       sourceJobId: String(raw.id ?? raw.jobId),
       title: String(raw.title ?? "Untitled role"),
@@ -54,7 +59,7 @@ export class CustomEmployerAdapter extends BaseJobSourceAdapter {
       location: typeof raw.location === "string" ? raw.location : "Malta",
       postedAt: String(raw.postedAt ?? new Date().toISOString()),
       applicationUrl: typeof raw.applicationUrl === "string" ? raw.applicationUrl : undefined,
-      applicationEmail: typeof raw.__applicationEmail === "string" ? raw.__applicationEmail : undefined,
+      applicationEmail,
       applicationMethod: method,
       applicationProvider: "internal",
       autoApplySupported: method !== "manual",
