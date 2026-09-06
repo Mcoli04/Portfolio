@@ -46,6 +46,11 @@ export class EmployerFeedAdapter extends BaseJobSourceAdapter {
   }
 
   normalizeJob(raw: RawSourceJob): NormalizedJob {
+    const applicationEmail =
+      typeof raw.applicationEmail === "string" && raw.applicationEmail.trim().length > 0
+        ? raw.applicationEmail.trim()
+        : undefined;
+
     return {
       sourceJobId: String(raw.id ?? raw.jobId),
       title: String(raw.title ?? "Untitled role"),
@@ -56,9 +61,9 @@ export class EmployerFeedAdapter extends BaseJobSourceAdapter {
       postedAt: String(raw.postedAt ?? new Date().toISOString()),
       expiresAt: typeof raw.expiresAt === "string" ? raw.expiresAt : undefined,
       applicationUrl: typeof raw.applicationUrl === "string" ? raw.applicationUrl : undefined,
-      applicationEmail: typeof raw.applicationEmail === "string" ? raw.applicationEmail : undefined,
-      applicationMethod: raw.applicationEmail ? "email" : "manual",
-      autoApplySupported: Boolean(raw.applicationEmail),
+      applicationEmail,
+      applicationMethod: applicationEmail ? "email" : "manual",
+      autoApplySupported: Boolean(applicationEmail),
       raw,
     };
   }
