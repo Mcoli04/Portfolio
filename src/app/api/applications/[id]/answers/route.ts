@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { validateApplicationAnswers } from "@/lib/applications/application-answer-validation";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,13 @@ export async function POST(
     );
   }
 
+  if (application.status !== "manual_required") {
+    return NextResponse.json(
+      { error: "This application is not awaiting manual answers" },
+      { status: 409 }
+    );
+  }
+
   const body = await req.json();
   const answers = body?.answers;
 
@@ -60,36 +68,20 @@ export async function POST(
     );
   }
 
-  for (const question of pendingQuestions ?? []) {
-    const rawAnswer = answers[question.field_id];
+  const questions = pendingQuestions ?? [];
 
-    if (question.field_type === "file" || question.field_type === "boolean") {
-      continue;
-    }
+  const validation = validateApplicationAnswers(questions, answers);
 
-    if (question.required && (typeof rawAnswer !== "string" || !rawAnswer.trim())) {
-      return NextResponse.json(
-        { error: `Answer required for ${question.field_id}` },
-        { status: 400 }
-      );
-    }
-
-    if (question.field_type === "select" && typeof rawAnswer === "string" && rawAnswer.trim()) {
-      const options = Array.isArray(question.options) ? question.options : [];
-      const valid = options.some(
-        (option: { value?: string }) => option.value === rawAnswer
-      );
-
-      if (!valid) {
-        return NextResponse.json(
-          { error: `Invalid option for ${question.field_id}` },
-          { status: 400 }
-        );
-      }
-    }
+  if (!validation.ok) {
+    return NextResponse.json(
+      { error: validation.error },
+      { status: 400 }
+    );
   }
 
-  for (const question of pendingQuestions ?? []) {
+  const savedFieldIds: string[] = [];
+
+  for (const question of questions) {
     if (
       question.field_type !== "text" &&
       question.field_type !== "textarea" &&
@@ -120,6 +112,8 @@ export async function POST(
         { status: 500 }
       );
     }
+
+    savedFieldIds.push(question.field_id);
   }
 
   const { error: queueError } = await supabase
@@ -144,7 +138,7 @@ export async function POST(
     event_type: "APPLICATION_QUEUED",
     metadata: {
       reason: "user_answers_saved",
-      answeredFieldIds: Object.keys(answers),
+      answeredFieldIds: savedFieldIds,
     },
   });
 
