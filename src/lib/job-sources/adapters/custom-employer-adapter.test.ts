@@ -19,3 +19,16 @@ test("normalizeJob: email method without a published application email stays man
   assert.equal(job.applicationMethod, "manual");
   assert.equal(job.autoApplySupported, false);
 });
+
+test("getApplicationMethod: email without a published application email stays manual", () => {
+  const adapter = new CustomEmployerAdapter({
+    integrations: [],
+  });
+
+  const method = adapter.getApplicationMethod({
+    id: "123",
+    __applicationMethod: "email",
+  });
+
+  assert.equal(method, "manual");
+});

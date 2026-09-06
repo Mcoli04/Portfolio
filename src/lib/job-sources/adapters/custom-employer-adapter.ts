@@ -72,7 +72,14 @@ export class CustomEmployerAdapter extends BaseJobSourceAdapter {
   }
 
   getApplicationMethod(raw: RawSourceJob) {
-    return (raw.__applicationMethod as "internal" | "email" | "manual") ?? "manual";
+    const requestedMethod =
+      (raw.__applicationMethod as "internal" | "email" | "manual") ?? "manual";
+    const applicationEmail =
+      typeof raw.__applicationEmail === "string" && raw.__applicationEmail.trim().length > 0
+        ? raw.__applicationEmail.trim()
+        : undefined;
+
+    return requestedMethod === "email" && !applicationEmail ? "manual" : requestedMethod;
   }
 
   getCompany(raw: RawSourceJob) {
