@@ -46,7 +46,15 @@ export async function POST(
     );
   }
 
-  const body = await req.json();
+  const body = await req.json().catch(() => null);
+
+  if (!body) {
+    return NextResponse.json(
+      { error: "Request body must contain valid JSON" },
+      { status: 400 }
+    );
+  }
+
   const answers = body?.answers;
 
   if (!answers || typeof answers !== "object" || Array.isArray(answers)) {
