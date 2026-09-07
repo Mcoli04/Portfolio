@@ -82,11 +82,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: applicationError?.message ?? "Could not create application" }, { status: 500 });
   }
 
-  await supabase.from("application_events").insert({
+  const { error: eventError } = await supabase.from("application_events").insert({
     application_id: application.id,
     event_type: "APPLICATION_CREATED",
     metadata: { matchScore, autoApplyAction: action },
   });
+
+  if (eventError) {
+    console.error("[apply] failed to log APPLICATION_CREATED", eventError.message);
+  }
 
   if (action === "add_to_review_queue") {
     return NextResponse.json({ status: "queued", application });
