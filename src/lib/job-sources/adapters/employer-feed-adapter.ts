@@ -73,7 +73,12 @@ export class EmployerFeedAdapter extends BaseJobSourceAdapter {
   }
 
   getApplicationMethod(raw: RawSourceJob) {
-    return raw.applicationEmail ? ("email" as const) : ("manual" as const);
+    const applicationEmail =
+      typeof raw.applicationEmail === "string" && raw.applicationEmail.trim().length > 0
+        ? raw.applicationEmail.trim()
+        : undefined;
+
+    return applicationEmail ? ("email" as const) : ("manual" as const);
   }
 
   getCompany(raw: RawSourceJob) {

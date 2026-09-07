@@ -52,3 +52,16 @@ test("normalizeJob: non-string applicationEmail never enables auto-apply", () =>
   assert.equal(job.applicationMethod, "manual");
   assert.equal(job.autoApplySupported, false);
 });
+
+test("getApplicationMethod: malformed applicationEmail stays manual", () => {
+  const adapter = new EmployerFeedAdapter({
+    feeds: [{ employerName: "Example Malta Ltd", feedUrl: "https://example.com/jobs.json", format: "json" }],
+  });
+
+  const method = adapter.getApplicationMethod({
+    id: "999",
+    applicationEmail: { unexpected: true },
+  });
+
+  assert.equal(method, "manual");
+});
