@@ -6,6 +6,37 @@ export interface CustomEmployerConfig {
   integrations: { employerName: string; endpoint: string; applicationMethod: "internal" | "email" | "manual"; applicationEmail?: string }[];
 }
 
+const CUSTOM_EMPLOYER_APPLICATION_METHODS = ["internal", "email", "manual"] as const;
+type CustomEmployerApplicationMethod = (typeof CUSTOM_EMPLOYER_APPLICATION_METHODS)[number];
+
+function isCustomEmployerApplicationMethod(value: unknown): value is CustomEmployerApplicationMethod {
+  return (
+    typeof value === "string" &&
+    (CUSTOM_EMPLOYER_APPLICATION_METHODS as readonly string[]).includes(value)
+  );
+}
+
+function resolveApplicationEmail(raw: RawSourceJob): string | undefined {
+  return typeof raw.__applicationEmail === "string" && raw.__applicationEmail.trim().length > 0
+    ? raw.__applicationEmail.trim()
+    : undefined;
+}
+
+/**
+ * `__applicationMethod` is always set by fetchJobsLive() from the admin-
+ * configured integration, never from the external employer feed's own
+ * payload (the object spread there is overridden by this explicit field) —
+ * but a config value outside CustomEmployerConfig's declared union (e.g. a
+ * typo made directly against job_sources.config) must still fail safely
+ * rather than being trusted through a cast and reaching the database's
+ * application_method CHECK constraint unchecked. Any unrecognized value
+ * falls back to "manual", identical to an omitted one.
+ */
+function resolveApplicationMethod(raw: RawSourceJob, applicationEmail: string | undefined): CustomEmployerApplicationMethod {
+  const requestedMethod = isCustomEmployerApplicationMethod(raw.__applicationMethod) ? raw.__applicationMethod : "manual";
+  return requestedMethod === "email" && !applicationEmail ? "manual" : requestedMethod;
+}
+
 /**
  * Catch-all for direct, bespoke employer integrations that don't fit a
  * standard ATS shape (e.g. a Malta employer's own careers API). Each entry
@@ -44,12 +75,8 @@ export class CustomEmployerAdapter extends BaseJobSourceAdapter {
   }
 
   normalizeJob(raw: RawSourceJob): NormalizedJob {
-    const requestedMethod = (raw.__applicationMethod as "internal" | "email" | "manual") ?? "manual";
-    const applicationEmail =
-      typeof raw.__applicationEmail === "string" && raw.__applicationEmail.trim().length > 0
-        ? raw.__applicationEmail.trim()
-        : undefined;
-    const method = requestedMethod === "email" && !applicationEmail ? "manual" : requestedMethod;
+    const applicationEmail = resolveApplicationEmail(raw);
+    const method = resolveApplicationMethod(raw, applicationEmail);
     return {
       sourceJobId: String(raw.id ?? raw.jobId),
       title: String(raw.title ?? "Untitled role"),
@@ -72,14 +99,7 @@ export class CustomEmployerAdapter extends BaseJobSourceAdapter {
   }
 
   getApplicationMethod(raw: RawSourceJob) {
-    const requestedMethod =
-      (raw.__applicationMethod as "internal" | "email" | "manual") ?? "manual";
-    const applicationEmail =
-      typeof raw.__applicationEmail === "string" && raw.__applicationEmail.trim().length > 0
-        ? raw.__applicationEmail.trim()
-        : undefined;
-
-    return requestedMethod === "email" && !applicationEmail ? "manual" : requestedMethod;
+    return resolveApplicationMethod(raw, resolveApplicationEmail(raw));
   }
 
   getCompany(raw: RawSourceJob) {

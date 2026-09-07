@@ -77,7 +77,12 @@ export async function ingestJobs(supabase: SupabaseClient): Promise<IngestSummar
         if (duplicate) {
           summary.jobsDeduplicated++;
           deduplicated++;
-          await upsertJob(supabase, adapter.key, sourceRow?.id ?? null, normalized, duplicate.id);
+          const { error: mergeError } = await upsertJob(supabase, adapter.key, sourceRow?.id ?? null, normalized, duplicate.id);
+          if (mergeError) {
+            console.error(`[job-ingest] source=${adapter.key} failed to merge duplicate job ${normalized.sourceJobId}`, mergeError.message);
+            summary.errors.push({ source: adapter.key, message: `Failed to merge duplicate job ${normalized.sourceJobId}: ${mergeError.message}` });
+            continue;
+          }
           summary.jobsUpdated++;
           updated++;
           continue;
@@ -100,6 +105,9 @@ export async function ingestJobs(supabase: SupabaseClient): Promise<IngestSummar
           created++;
         } else if (!error) {
           updated++;
+        } else {
+          console.error(`[job-ingest] source=${adapter.key} failed to upsert job ${normalized.sourceJobId}`, error.message);
+          summary.errors.push({ source: adapter.key, message: `Failed to upsert job ${normalized.sourceJobId}: ${error.message}` });
         }
       }
 
