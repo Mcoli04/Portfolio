@@ -141,7 +141,7 @@ export async function POST(
     );
   }
 
-  await supabase.from("application_events").insert({
+  const { error: eventError } = await supabase.from("application_events").insert({
     application_id: application.id,
     event_type: "APPLICATION_QUEUED",
     metadata: {
@@ -149,6 +149,10 @@ export async function POST(
       answeredFieldIds: savedFieldIds,
     },
   });
+
+  if (eventError) {
+    console.error("[application-answers] failed to log APPLICATION_QUEUED", eventError.message);
+  }
 
   return NextResponse.json({
     status: "queued",
