@@ -39,7 +39,13 @@ async function logEvent(
   eventType: string,
   metadata: Record<string, unknown> = {}
 ) {
-  await supabase.from("application_events").insert({ application_id: applicationId, event_type: eventType, metadata });
+  const { error } = await supabase
+    .from("application_events")
+    .insert({ application_id: applicationId, event_type: eventType, metadata });
+
+  if (error) {
+    console.error(`[engine] failed to log application event ${eventType}`, error.message);
+  }
 }
 
 /**
