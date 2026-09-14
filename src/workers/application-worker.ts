@@ -28,6 +28,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceRoleClient } from "../lib/supabase/service-role";
 import { ApplicationAutomationEngine } from "../lib/applications/engine";
+import { claimApplicationForProcessing } from "../lib/applications/claim";
 import type { Application, Job, Profile, ResumeVersion } from "../lib/types/database";
 
 const POLL_INTERVAL_MS = 60 * 1000;
@@ -43,9 +44,29 @@ const BATCH_LIMIT = 10;
  * does, and only once a provider actually confirms success — and only logs
  * non-sensitive identifiers (application/job ids, statuses), never profile,
  * resume, or cover-letter content.
+ *
+ * Claims the row atomically before doing anything else. This is what
+ * prevents two overlapping poll ticks (setInterval does not wait for the
+ * previous async pollTick() to finish, so a batch that runs long enough
+ * genuinely can overlap with the next tick) from both processing the same
+ * application — the second claim attempt simply returns null and this
+ * function returns immediately without ever calling engine.run(). For
+ * "stuck_applying" rows specifically, the claim's stale-recovery option
+ * re-validates staleness at claim time (not just at the original SELECT),
+ * so a row that started processing normally in the gap between the query
+ * and this claim is correctly left alone, never stolen.
  */
 async function processApplication(supabase: SupabaseClient, engine: ApplicationAutomationEngine, application: Application, reason: "queued" | "stuck_applying") {
   console.log(`[application-worker] processing application ${application.id} (job ${application.job_id}, reason=${reason})`);
+
+  const claimed = await claimApplicationForProcessing(supabase, application.id, {
+    allowStaleApplyingOlderThanMs: reason === "stuck_applying" ? STUCK_THRESHOLD_MS : undefined,
+  });
+  if (!claimed) {
+    console.log(`[application-worker] application ${application.id} could not be claimed (already claimed or no longer eligible) — skipping`);
+    return;
+  }
+  application = claimed;
 
   try {
     const { data: job, error: jobError } = await supabase.from("jobs").select("*").eq("id", application.job_id).single<Job>();
