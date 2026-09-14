@@ -37,6 +37,14 @@ export async function getDiscoverFeed(
     .from("jobs")
     .select("*")
     .eq("active", true)
+    // Excludes jobs the dedup logic already identified as duplicates of
+    // another job (ingest.ts sets canonical_job_id when findDuplicate()
+    // matches an incoming posting against an existing one). The canonical
+    // row itself always has canonical_job_id: null, so it stays visible —
+    // only the row(s) merged INTO it are hidden here. This is what stops a
+    // user seeing (and being able to swipe right on) what Sqwer's own
+    // dedup logic already judged to be the same underlying vacancy twice.
+    .is("canonical_job_id", null)
     .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order("posted_at", { ascending: false })
     .limit(FETCH_POOL_SIZE);

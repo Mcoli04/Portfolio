@@ -155,3 +155,78 @@ test("ingestJobs: unrelated jobs in the same run still succeed despite another j
   assert.equal(summary.jobsCreated, DEMO_JOBS.length - 2);
   assert.equal(summary.errors.length, 2);
 });
+
+// ============================================================================
+// Characterization test: what a successfully-merged duplicate is actually
+// stored as. This documents the exact contract
+// discover-feed.ts's canonical_job_id filter depends on — if this ever
+// changes (e.g. a merged duplicate stops being written with active: true,
+// or canonical_job_id stops being set to the matched job's id), the
+// Discover-level fix silently stops working, so this must fail loudly if
+// that contract ever drifts.
+// ============================================================================
+
+function createFakeSupabaseCapturingUpserts(): { supabase: SupabaseClient; upsertedRows: Record<string, unknown>[] } {
+  const upsertedRows: Record<string, unknown>[] = [];
+  const supabase = {
+    from(table: string) {
+      if (table === "job_sources") {
+        return {
+          select() {
+            return makeAwaitableEq({ data: [], error: null });
+          },
+          update() {
+            return { eq: () => Promise.resolve({ data: null, error: null }) };
+          },
+        };
+      }
+
+      if (table === "jobs") {
+        return {
+          select() {
+            let eqCount = 0;
+            const builder: EqBuilder = {
+              eq() {
+                eqCount++;
+                return builder;
+              },
+              then(onFulfilled) {
+                const result = eqCount <= 1 ? { data: [EXISTING_DUPLICATE_ROW], error: null } : { data: [], error: null };
+                return Promise.resolve(result).then(onFulfilled);
+              },
+            };
+            return builder;
+          },
+          upsert(row: Record<string, unknown>) {
+            upsertedRows.push(row);
+            return {
+              select() {
+                return {
+                  single() {
+                    return Promise.resolve({ data: { id: `job-${row.source_job_id}` }, error: null });
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+
+      throw new Error(`createFakeSupabaseCapturingUpserts: unexpected table "${table}"`);
+    },
+  } as unknown as SupabaseClient;
+
+  return { supabase, upsertedRows };
+}
+
+test("ingestJobs characterization: a successfully-merged duplicate is stored with active: true and canonical_job_id set to the matched job's id", async () => {
+  const { supabase, upsertedRows } = createFakeSupabaseCapturingUpserts();
+  const summary = await ingestJobs(supabase);
+
+  assert.equal(summary.jobsDeduplicated, 1, "demo-002 should have matched the seeded existing duplicate");
+
+  const mergedRow = upsertedRows.find((row) => row.source_job_id === FAILING_MERGE_JOB_ID);
+  assert.ok(mergedRow, "expected an upsert call for the deduplicated job");
+  assert.equal(mergedRow?.canonical_job_id, EXISTING_DUPLICATE_ROW.id);
+  assert.equal(mergedRow?.active, true);
+});
