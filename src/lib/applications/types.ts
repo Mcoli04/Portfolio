@@ -102,4 +102,15 @@ export interface ApplicationProvider {
   submitApplication(job: Job, candidate: CandidateApplicationData): Promise<SubmissionResult>;
   verifySubmission(externalApplicationId: string): Promise<boolean>;
   getApplicationStatus(externalApplicationId: string): Promise<string>;
+  /**
+   * Optional, additional per-JOB eligibility gate — beyond getStatus(),
+   * which is necessarily coarse/provider-wide (e.g. "is ANY Greenhouse
+   * board authorized"). Most providers don't need this (undefined here
+   * means "eligible," so every existing provider is unaffected). Greenhouse
+   * uses it to require that THIS SPECIFIC job's own board has been
+   * individually authorized with its own dedicated credential, so one
+   * authorized employer's board can never make another, unauthorized
+   * employer's board on the same provider key eligible too.
+   */
+  isJobEligible?(job: { applicationUrl: string | null | undefined }): boolean;
 }

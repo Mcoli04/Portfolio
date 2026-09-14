@@ -48,6 +48,35 @@ export const integrationConfig = {
    * attempting to launch a browser.
    */
   browserAutomationAllowedDomains: csv(process.env.BROWSER_AUTOMATION_ALLOWED_DOMAINS).map((d) => d.toLowerCase()),
+  /**
+   * Greenhouse board tokens explicitly authorized for REAL Job Board Apply
+   * API submission — distinct from GREENHOUSE_BOARD_TOKENS (read-only
+   * ingestion, no authorization implied). Not a secret itself (a board
+   * token is a public URL slug), but necessary and NOT sufficient on its
+   * own: a token here with no matching GREENHOUSE_JOB_BOARD_API_KEY_<TOKEN>
+   * (see getGreenhouseJobBoardApiKey below) still resolves to
+   * manual_required. Empty by default — no employer is authorized until
+   * this is deliberately set after that specific employer issues their own
+   * credential.
+   */
+  greenhouseAuthorizedBoardTokens: csv(process.env.GREENHOUSE_AUTHORIZED_BOARD_TOKENS),
 };
 
 export type IntegrationStatus = "LIVE" | "DEMO" | "NOT_CONFIGURED" | "DISABLED";
+
+function sanitizeGreenhouseBoardTokenForEnvVarName(boardToken: string): string {
+  return boardToken.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+}
+
+/**
+ * Reads the dedicated submission credential for ONE Greenhouse board —
+ * never a shared/master key. Env var name pattern:
+ * GREENHOUSE_JOB_BOARD_API_KEY_<BOARD_TOKEN_UPPERCASED_SANITIZED>, e.g.
+ * board token "acmecorp" -> GREENHOUSE_JOB_BOARD_API_KEY_ACMECORP. Returns
+ * undefined (never a fallback to any other var) when that exact board's
+ * key isn't set, even if other boards' keys are.
+ */
+export function getGreenhouseJobBoardApiKey(boardToken: string): string | undefined {
+  const value = process.env[`GREENHOUSE_JOB_BOARD_API_KEY_${sanitizeGreenhouseBoardTokenForEnvVarName(boardToken)}`];
+  return present(value) ? value : undefined;
+}

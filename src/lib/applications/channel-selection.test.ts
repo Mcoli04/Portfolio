@@ -157,3 +157,78 @@ test("selectChannel: nothing live and no domain match resolves to none (the real
 
   assert.equal(selection.kind, "none");
 });
+
+// ============================================================================
+// isJobEligible: per-job refinement on top of provider.getStatus() === "LIVE"
+// (Greenhouse's per-board authorization is the first real consumer of this.)
+// ============================================================================
+
+function fakeProviderWithEligibility(
+  key: string,
+  status: IntegrationStatus,
+  isJobEligible: (job: { applicationUrl: string | null | undefined }) => boolean
+): ApplicationProvider {
+  return {
+    key,
+    name: key,
+    getStatus: () => status,
+    isJobEligible,
+  } as unknown as ApplicationProvider;
+}
+
+test("selectChannel: a LIVE provider is NOT selected for a job its own isJobEligible() rejects", () => {
+  const getProvider = getProviderFrom({
+    greenhouse: fakeProviderWithEligibility("greenhouse", "LIVE", () => false),
+  });
+
+  const selection = selectChannel(
+    {
+      isDemoSource: false,
+      applicationMethod: "ats",
+      applicationProvider: "greenhouse",
+      applicationEmail: null,
+      applicationUrl: "https://job-boards.greenhouse.io/unauthorized-board/jobs/1",
+    },
+    { getProvider }
+  );
+
+  assert.equal(selection.kind, "none");
+});
+
+test("selectChannel: a LIVE provider IS selected for a job its own isJobEligible() accepts", () => {
+  const getProvider = getProviderFrom({
+    greenhouse: fakeProviderWithEligibility("greenhouse", "LIVE", (job) => job.applicationUrl?.includes("authorized-board") ?? false),
+  });
+
+  const selection = selectChannel(
+    {
+      isDemoSource: false,
+      applicationMethod: "ats",
+      applicationProvider: "greenhouse",
+      applicationEmail: null,
+      applicationUrl: "https://job-boards.greenhouse.io/authorized-board/jobs/1",
+    },
+    { getProvider }
+  );
+
+  assert.equal(selection.kind, "provider");
+});
+
+test("selectChannel: a LIVE provider with no isJobEligible at all defaults to eligible (every provider except Greenhouse is unaffected)", () => {
+  const getProvider = getProviderFrom({
+    lever: fakeProvider("lever", "LIVE"),
+  });
+
+  const selection = selectChannel(
+    {
+      isDemoSource: false,
+      applicationMethod: "ats",
+      applicationProvider: "lever",
+      applicationEmail: null,
+      applicationUrl: "https://jobs.lever.co/some-employer/1",
+    },
+    { getProvider }
+  );
+
+  assert.equal(selection.kind, "provider");
+});

@@ -65,7 +65,11 @@ export function selectChannel(job: ChannelSelectionInput, options: ChannelSelect
 
   if ((job.applicationMethod === "api" || job.applicationMethod === "ats") && job.applicationProvider) {
     const provider = getProvider(job.applicationProvider);
-    if (provider && provider.getStatus() === "LIVE") return { kind: "provider", provider };
+    // isJobEligible is optional — undefined means "eligible" so every
+    // provider without a per-job gate (all of them except Greenhouse
+    // today) is completely unaffected by this check.
+    const eligible = provider?.isJobEligible?.({ applicationUrl: job.applicationUrl }) ?? true;
+    if (provider && provider.getStatus() === "LIVE" && eligible) return { kind: "provider", provider };
   }
 
   if (job.applicationMethod === "internal") {

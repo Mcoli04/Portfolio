@@ -4,11 +4,16 @@ import { computeAutoApplySupported, resolveAutoApplySupported } from "./auto-app
 import type { ApplicationProvider } from "@/lib/applications/types";
 import type { IntegrationStatus } from "@/lib/types/database";
 
-function fakeProvider(key: string, status: IntegrationStatus): ApplicationProvider {
+function fakeProvider(
+  key: string,
+  status: IntegrationStatus,
+  isJobEligible?: (job: { applicationUrl: string | null | undefined }) => boolean
+): ApplicationProvider {
   return {
     key,
     name: key,
     getStatus: () => status,
+    isJobEligible,
   } as unknown as ApplicationProvider;
 }
 
@@ -110,4 +115,34 @@ test("resolveAutoApplySupported: a non-demo source's claimed value is overridden
   });
 
   assert.equal(result, false);
+});
+
+test("computeAutoApplySupported: stays board-accurate, not provider-wide — an authorized board is true, an unauthorized board on the SAME provider key is false", () => {
+  // Regression test for Greenhouse's per-board authorization: once any one
+  // board is authorized, the provider key ("greenhouse") reports LIVE
+  // provider-wide, but auto_apply_supported must still reflect the SPECIFIC
+  // job's own board via isJobEligible(), not just the coarse provider status.
+  const getProvider = getProviderFrom({
+    greenhouse: fakeProvider("greenhouse", "LIVE", (job) => job.applicationUrl?.includes("authorized-board") ?? false),
+  });
+
+  const authorizedBoardResult = computeAutoApplySupported(
+    {
+      applicationMethod: "ats",
+      applicationProvider: "greenhouse",
+      applicationUrl: "https://job-boards.greenhouse.io/authorized-board/jobs/1",
+    },
+    { getProvider }
+  );
+  assert.equal(authorizedBoardResult, true);
+
+  const unauthorizedBoardResult = computeAutoApplySupported(
+    {
+      applicationMethod: "ats",
+      applicationProvider: "greenhouse",
+      applicationUrl: "https://job-boards.greenhouse.io/some-other-board/jobs/2",
+    },
+    { getProvider }
+  );
+  assert.equal(unauthorizedBoardResult, false);
 });
