@@ -69,6 +69,7 @@ test("accepts the provider's exact select value and reports it as saved", () => 
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.savedFieldIds, ["relocate"]);
+  assert.deepEqual(result.savedAnswers, [{ field_id: "relocate", answer_value: "0" }]);
 });
 
 test("required unsupported file questions remain manual", () => {
@@ -124,4 +125,5 @@ test("optional unanswered supported questions do not count as saved", () => {
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.savedFieldIds, []);
+  assert.deepEqual(result.savedAnswers, []);
 });

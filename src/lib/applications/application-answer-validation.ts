@@ -4,6 +4,8 @@ export interface ApplicationAnswerValidationResult {
   ok: boolean;
   error?: string;
   savedFieldIds?: string[];
+  /** Ready-to-persist (field_id, trimmed answer_value) pairs for save_application_answers_and_requeue(). */
+  savedAnswers?: { field_id: string; answer_value: string }[];
 }
 
 export function validateApplicationAnswers(
@@ -32,6 +34,7 @@ export function validateApplicationAnswers(
   }
 
   const savedFieldIds: string[] = [];
+  const savedAnswers: { field_id: string; answer_value: string }[] = [];
 
   for (const question of questions) {
     const rawAnswer = answers[question.field_id];
@@ -81,11 +84,13 @@ export function validateApplicationAnswers(
       rawAnswer.trim()
     ) {
       savedFieldIds.push(question.field_id);
+      savedAnswers.push({ field_id: question.field_id, answer_value: rawAnswer.trim() });
     }
   }
 
   return {
     ok: true,
     savedFieldIds,
+    savedAnswers,
   };
 }

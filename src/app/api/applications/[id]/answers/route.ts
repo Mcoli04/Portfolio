@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { validateApplicationAnswers } from "@/lib/applications/application-answer-validation";
+import { saveApplicationAnswersAndRequeue } from "@/lib/applications/save-application-answers";
 
 export const runtime = "nodejs";
 
@@ -87,71 +88,38 @@ export async function POST(
     );
   }
 
-  const savedFieldIds: string[] = [];
+  const result = await saveApplicationAnswersAndRequeue(
+    supabase,
+    application.id,
+    validation.savedAnswers ?? []
+  );
 
-  for (const question of questions) {
-    if (
-      question.field_type !== "text" &&
-      question.field_type !== "textarea" &&
-      question.field_type !== "select"
-    ) {
-      continue;
-    }
-
-    const rawAnswer = answers[question.field_id];
-
-    if (typeof rawAnswer !== "string" || !rawAnswer.trim()) {
-      continue;
-    }
-
-    const { error: answerError } = await supabase
-      .from("application_pending_questions")
-      .update({
-        answer_value: rawAnswer.trim(),
-        answer_source: "application_only",
-        source_answer_library_id: null,
-      })
-      .eq("id", question.id)
-      .eq("application_id", application.id);
-
-    if (answerError) {
+  if (!result.ok) {
+    if (result.reason === "not_found") {
       return NextResponse.json(
-        { error: "Could not save application answers" },
-        { status: 500 }
+        { error: "Application not found" },
+        { status: 404 }
       );
     }
 
-    savedFieldIds.push(question.field_id);
-  }
+    if (result.reason === "not_manual_required") {
+      return NextResponse.json(
+        { error: "This application is no longer awaiting manual answers" },
+        { status: 409 }
+      );
+    }
 
-  const { error: queueError } = await supabase
-    .from("applications")
-    .update({
-      status: "queued",
-      manual_required: false,
-      error_message: null,
-    })
-    .eq("id", application.id)
-    .eq("user_id", user.id);
+    if (result.reason === "unanswered_required_questions") {
+      return NextResponse.json(
+        { error: "Some required questions still need an answer. Please refresh and try again." },
+        { status: 409 }
+      );
+    }
 
-  if (queueError) {
     return NextResponse.json(
-      { error: "Answers were saved, but the application could not be queued" },
+      { error: "Could not save application answers and queue the application" },
       { status: 500 }
     );
-  }
-
-  const { error: eventError } = await supabase.from("application_events").insert({
-    application_id: application.id,
-    event_type: "APPLICATION_QUEUED",
-    metadata: {
-      reason: "user_answers_saved",
-      answeredFieldIds: savedFieldIds,
-    },
-  });
-
-  if (eventError) {
-    console.error("[application-answers] failed to log APPLICATION_QUEUED", eventError.message);
   }
 
   return NextResponse.json({
