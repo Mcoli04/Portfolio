@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-white text-slate-900 antialiased;
+}
+
+::selection {
+  @apply bg-brand-200 text-brand-900;
+}
+
+.swipe-card-shadow {
+  box-shadow: 0 30px 60px -20px rgba(20, 29, 64, 0.35), 0 10px 20px -8px rgba(20, 29, 64, 0.15);
+}
