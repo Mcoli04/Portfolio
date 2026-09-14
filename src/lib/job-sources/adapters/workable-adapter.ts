@@ -46,7 +46,13 @@ export class WorkableAdapter extends BaseJobSourceAdapter {
       applicationUrl: typeof raw.url === "string" ? raw.url : undefined,
       applicationMethod: "ats",
       applicationProvider: "workable",
-      autoApplySupported: true,
+      // WorkableApplicationProvider.isConfigured() stays false until a
+      // specific employer grants a write-scoped API token — see
+      // providers/workable-provider.ts. ingest.ts recomputes this from the
+      // real provider registry regardless, but the adapter's own claim
+      // should still be accurate rather than assuming access that hasn't
+      // been granted.
+      autoApplySupported: false,
       raw,
     };
   }

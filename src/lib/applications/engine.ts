@@ -8,7 +8,7 @@ import { isIdentityRole, isDocumentRole, resolveIdentityFieldValue, hasDocumentD
 import { syncPendingQuestions, getApplicationOnlyAnswers } from "./pending-questions";
 import { normalizeApplicationOnlyAnswer } from "./application-only-answer";
 import { getApplicationProvider } from "./provider-registry";
-import { BrowserAutomationApplicationProvider } from "./providers/browser-automation-provider";
+import { selectChannel } from "./channel-selection";
 import type { ApplicationProvider, CandidateApplicationData, FormField } from "./types";
 
 export type EngineOutcome =
@@ -65,37 +65,25 @@ async function logEvent(
  * else with no other channel returns null here and resolves to
  * manual_required with that job's real application_url, without ever
  * touching Playwright.
+ *
+ * This is a thin wrapper around channel-selection.ts's selectChannel() —
+ * the one authoritative implementation of this decision tree, also used by
+ * jobs/auto-apply-supported.ts to compute the persisted auto_apply_supported
+ * flag, so the two can never drift out of sync. Unwrapping the result back
+ * to a plain ApplicationProvider | null here preserves this function's
+ * existing external behavior/signature exactly — every call site (this
+ * file, api/applications/apply/route.ts via engine.run(), the worker, the
+ * admin retry route) is unaffected by the refactor.
  */
 export function selectProvider(job: Job): ApplicationProvider | null {
-  if (job.source === "demo") {
-    return getApplicationProvider("internal");
-  }
-
-  if (job.application_method === "api" && job.application_provider) {
-    const provider = getApplicationProvider(job.application_provider);
-    if (provider && provider.getStatus() === "LIVE") return provider;
-  }
-
-  if (job.application_method === "ats" && job.application_provider) {
-    const provider = getApplicationProvider(job.application_provider);
-    if (provider && provider.getStatus() === "LIVE") return provider;
-  }
-
-  if (job.application_method === "internal") {
-    const provider = getApplicationProvider("employer_integration");
-    if (provider && provider.getStatus() === "LIVE") return provider;
-  }
-
-  if (job.application_url && BrowserAutomationApplicationProvider.isDomainAllowed(job.application_url)) {
-    return getApplicationProvider("browser_automation");
-  }
-
-  if (job.application_method === "email" && job.application_email) {
-    const provider = getApplicationProvider("email");
-    if (provider && provider.getStatus() === "LIVE") return provider;
-  }
-
-  return null;
+  const selection = selectChannel({
+    isDemoSource: job.source === "demo",
+    applicationMethod: job.application_method,
+    applicationProvider: job.application_provider,
+    applicationEmail: job.application_email,
+    applicationUrl: job.application_url,
+  });
+  return selection.kind === "none" ? null : selection.provider;
 }
 
 /**

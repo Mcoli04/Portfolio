@@ -47,7 +47,13 @@ export class AshbyAdapter extends BaseJobSourceAdapter {
       applicationUrl: typeof raw.jobUrl === "string" ? raw.jobUrl : undefined,
       applicationMethod: "ats",
       applicationProvider: "ashby",
-      autoApplySupported: true,
+      // AshbyApplicationProvider.isConfigured() stays false until a
+      // specific employer grants a write-scoped API key — see
+      // providers/ashby-provider.ts. ingest.ts recomputes this from the
+      // real provider registry regardless, but the adapter's own claim
+      // should still be accurate rather than assuming access that hasn't
+      // been granted.
+      autoApplySupported: false,
       raw,
     };
   }

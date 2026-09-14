@@ -32,6 +32,25 @@ test("selectProvider: a real Greenhouse job with no verified submission provider
   assert.equal(provider, null, "expected no provider (-> manual_required), not a fallback to browser automation");
 });
 
+test("selectProvider: an 'internal' method job with no authorised employer integration and no allowlisted domain never falls back to browser automation", () => {
+  // Regression test for the selectProvider() -> channel-selection.ts
+  // refactor: locks in that the "internal" branch is still checked, and
+  // still checked BEFORE browser automation, exactly as before.
+  const job = {
+    id: "job-2",
+    source: "employer_portal",
+    application_method: "internal",
+    application_provider: "internal",
+    application_url: null,
+    application_email: null,
+    title: "Ops Associate",
+    company_name: "Some Employer",
+  } as unknown as Job;
+
+  const provider = selectProvider(job);
+  assert.equal(provider, null, "expected no provider (-> manual_required): employer_integration is not configured for any employer yet");
+});
+
 test("BrowserAutomationApplicationProvider.isDomainAllowed: only matches explicitly allowlisted domains and their subdomains", () => {
   const url = "https://job-boards.greenhouse.io/betsson/jobs/123456";
   assert.equal(BrowserAutomationApplicationProvider.isDomainAllowed(url, []), false);

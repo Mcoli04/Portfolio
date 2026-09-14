@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAllJobSourceAdapters } from "@/lib/job-sources/registry";
 import { computeDedupeHash, findDuplicate, type DuplicateCandidate } from "@/lib/dedupe";
+import { resolveAutoApplySupported } from "@/lib/jobs/auto-apply-supported";
 import type { NormalizedJob } from "@/lib/job-sources/types";
 import type { JobSourceRow } from "@/lib/types/database";
 
@@ -169,7 +170,7 @@ async function upsertJob(
     application_email: normalized.applicationEmail ?? null,
     application_method: normalized.applicationMethod,
     application_provider: normalized.applicationProvider ?? null,
-    auto_apply_supported: normalized.autoApplySupported,
+    auto_apply_supported: resolveAutoApplySupported(sourceKey, normalized),
     dedupe_hash: dedupeHash,
     canonical_job_id: mergeIntoJobId,
     status: mergeIntoJobId ? ("UPDATED" as const) : ("ACTIVE" as const),

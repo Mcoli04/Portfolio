@@ -49,7 +49,13 @@ export class LeverAdapter extends BaseJobSourceAdapter {
       applicationUrl: typeof raw.applyUrl === "string" ? raw.applyUrl : (raw.hostedUrl as string),
       applicationMethod: "ats",
       applicationProvider: "lever",
-      autoApplySupported: true,
+      // LeverApplicationProvider.isConfigured() stays false until a
+      // specific employer grants Lever's Postings Apply API — see
+      // providers/lever-provider.ts. ingest.ts recomputes this from the
+      // real provider registry regardless, but the adapter's own claim
+      // should still be accurate rather than assuming access that hasn't
+      // been granted.
+      autoApplySupported: false,
       raw,
     };
   }

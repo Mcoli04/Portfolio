@@ -61,7 +61,12 @@ export function PostJobForm({
         expires_at: expiresAt.toISOString(),
         application_method: "internal",
         application_provider: "internal",
-        auto_apply_supported: true,
+        // EmployerIntegrationApplicationProvider.isConfigured() stays false
+        // until a direct submission endpoint has been authorised for this
+        // employer (src/lib/applications/providers/employer-integration-provider.ts)
+        // — a job posted here has no submissionEndpoint, so it always
+        // resolves to manual_required rather than a genuine auto-submission.
+        auto_apply_supported: false,
         status: "ACTIVE",
         active: true,
       });

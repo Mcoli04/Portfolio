@@ -44,7 +44,13 @@ export class SmartRecruitersAdapter extends BaseJobSourceAdapter {
       applicationUrl: typeof (raw.applyUrl as { url?: string })?.url === "string" ? (raw.applyUrl as { url: string }).url : undefined,
       applicationMethod: "ats",
       applicationProvider: "smartrecruiters",
-      autoApplySupported: true,
+      // SmartRecruitersApplicationProvider.isConfigured() stays false until
+      // a specific employer grants an OAuth client for their Apply API —
+      // see providers/smartrecruiters-provider.ts. ingest.ts recomputes
+      // this from the real provider registry regardless, but the adapter's
+      // own claim should still be accurate rather than assuming access
+      // that hasn't been granted.
+      autoApplySupported: false,
       raw,
     };
   }
